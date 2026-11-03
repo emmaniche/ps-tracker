@@ -1,0 +1,27 @@
+# Render Blueprint: New > Blueprint > pick this repo.
+services:
+  - type: web
+    name: process-safety-tracker
+    runtime: node
+    plan: free            # free plan has NO persistent disk: switch to "starter" and uncomment the disk below to keep data
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: APP_PASSWORD
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: TZ
+        value: Africa/Lagos
+    # disk:
+    #   name: tracker-data
+    #   mountPath: /data
+    #   sizeGB: 1
+    # (and add env var DATA_DIR=/data)

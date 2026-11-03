@@ -1,0 +1,25 @@
+{
+  "name": "process-safety-tracker",
+  "version": "1.0.0",
+  "description": "Process Safety Tracker – SCE register, inspections, barrier overrides, defects & actions, KPIs, timeline, documents and email alerts.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "build": "node --check server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.700.0",
+    "@neon/config": "^1.10.0",
+    "@neon/env": "^1.6.8",
+    "@neon/functions": "^0.11.0",
+    "express": "^4.19.2",
+    "multer": "^2.4.0",
+    "nodemailer": "^6.9.14",
+    "pg": "^8.11.3"
+  },
+  "license": "UNLICENSED"
+}

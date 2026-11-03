@@ -1,0 +1,21 @@
+# fly launch --copy-config --no-deploy   then:   fly volumes create tracker_data --size 1   then:   fly deploy
+app = "process-safety-tracker"      # change to a unique name
+primary_region = "lhr"
+
+[build]
+
+[env]
+  PORT = "8080"
+  DATA_DIR = "/data"
+  TZ = "Africa/Lagos"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1          # keep 1 running so the daily email digest fires
+
+[mounts]
+  source = "tracker_data"
+  destination = "/data"

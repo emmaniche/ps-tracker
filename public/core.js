@@ -67,13 +67,15 @@ window.APP = (function () {
 
   async function detect() {
     try {
-      const c = new AbortController(); const to = setTimeout(() => c.abort(), 2500);
+      const c = new AbortController(); const to = setTimeout(() => c.abort(), cfg.requireServer ? 75000 : 2500);
       const r = await fetch(base + '/api/health', { signal: c.signal }); clearTimeout(to);
       if (r.ok) { const j = await r.json(); if (j && j.app === 'ps-tracker') { S.mode = 'server'; S.info = j; return; } }
-    } catch (e) { /* static host */ }
+    } catch (e) { /* unreachable or cold start */ }
+    if (cfg.requireServer) { S.mode = 'offline'; throw new Error('The shared server is not reachable right now. This tracker does not save data in the browser; please wait a moment and reload.'); }
     S.mode = 'static';
   }
   async function load() {
+    if (S.mode === 'offline') throw new Error('The shared server is not reachable right now. This tracker does not save data in the browser; please wait a moment and reload.');
     if (S.mode === 'server') {
       const j = await req('GET', '/state');
       S.db = Object.assign({ sce: [], insp: [], ovr: [], act: [], kpi: [], log: [] }, j.db); S.settings = mergeSettings(j.settings); S.rev = j.rev;

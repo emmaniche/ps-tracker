@@ -1,5 +1,8 @@
-// Optional. If you host the front-end on a static host (GitHub Pages, Netlify, Vercel)
-// but want shared data + scheduled emails, deploy the server (Render/Railway/Fly/Replit/Glitch)
-// and put its address here, e.g. apiBase: 'https://my-tracker.onrender.com'
-// Leave blank to use the same address as the page (server mode) or browser-only mode (static hosts).
-window.APP_CONFIG = { apiBase: '' };
+// Shared backend (Neon Postgres + Object Storage, served by Render).
+// The tracker runs in server mode only: records and files are never written
+// to this browser's IndexedDB. requireServer makes a failed connection an
+// error instead of silently falling back to local storage.
+window.APP_CONFIG = {
+  apiBase: 'https://process-safety-tracker.onrender.com',
+  requireServer: true
+};

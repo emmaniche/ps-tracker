@@ -6,7 +6,8 @@ export default defineConfig({
     realtime: true,
   },
   auth: true,
-  aiGateway: true,
+  // aiGateway is omitted: Neon's free plan does not serve gateway requests and
+  // refuses to deploy while it is enabled. Enable it on a paid plan if needed.
   functions: {
     digestcron: {
       name: "Daily digest relay",

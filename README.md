@@ -1,6 +1,10 @@
-# Process Safety Tracker
+# OML 11 JV Process Safety Tracker
 
-An online version of the NEPL Process Safety Tracker workbook. Every sheet became a module, with a live dashboard, timeline, summary sheet, document attachments and email alerts on top.
+An online version of the NEPL Process Safety Tracker workbook for the NNPC E&P / WAGL OML 11 joint venture. Every sheet became a module, with a live dashboard, timeline, summary sheet, document attachments and email alerts on top.
+
+- **App:** https://oml11-safety.vercel.app
+- **API:** https://process-safety-tracker.onrender.com
+- **Data:** Neon Postgres (state) + Neon Object Storage (documents)
 
 | Workbook sheet | App module |
 |---|---|

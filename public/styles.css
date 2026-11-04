@@ -266,6 +266,9 @@ table.t{width:100%;border-collapse:collapse;font-size:14px}
 .dlg-b .acts{display:flex;gap:8px;justify-content:flex-end}
 .login{min-height:100vh;display:grid;place-items:center;background:var(--ink);padding:20px}
 .login form{background:var(--surface);padding:28px;border-radius:14px;width:min(380px,100%);display:grid;gap:14px}
+.login-brand img{display:block;width:100%;height:auto;background:#fff;border-radius:10px;padding:8px}
+.brand-lockup{padding:2px 8px 8px}
+.brand-lockup img{display:block;width:100%;height:auto;background:#fff;border-radius:9px;padding:5px 7px}
 
 /* responsive */
 @media(max-width:1100px){.g-3,.g-2,.g-eq3{grid-template-columns:1fr}.g-4{grid-template-columns:1fr 1fr}.meters .meter:nth-child(n+3){display:none}}

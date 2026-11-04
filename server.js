@@ -185,7 +185,18 @@ setInterval(async () => {
 /* ---------- app ---------- */
 const app = express();
 app.disable('x-powered-by');
-app.use((req, res, next) => { res.set({ 'Access-Control-Allow-Origin': process.env.CORS_ORIGIN || '*', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS', 'X-Content-Type-Options': 'nosniff' }); if (req.method === 'OPTIONS') return res.sendStatus(204); next(); });
+/* CORS: CORS_ORIGIN accepts a comma-separated list so a renamed front-end
+   domain can be added before the old one is retired. */
+const ORIGINS = (process.env.CORS_ORIGIN || '*').split(',').map(o => o.trim().replace(/\/$/, '')).filter(Boolean);
+app.use((req, res, next) => {
+  const origin = (req.headers.origin || '').replace(/\/$/, '');
+  const allow = ORIGINS.includes('*') ? '*' : (ORIGINS.includes(origin) ? origin : '');
+  const h = { 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS', 'Vary': 'Origin', 'X-Content-Type-Options': 'nosniff' };
+  if (allow) h['Access-Control-Allow-Origin'] = allow;
+  res.set(h);
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 app.use(express.json({ limit: '12mb' }));
 
 const PW = process.env.APP_PASSWORD || '';

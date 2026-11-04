@@ -1,7 +1,7 @@
 {
-  "name": "process-safety-tracker",
+  "name": "oml11-process-safety-tracker",
   "version": "1.0.0",
-  "description": "Process Safety Tracker – SCE register, inspections, barrier overrides, defects & actions, KPIs, timeline, documents and email alerts.",
+  "description": "OML 11 JV Process Safety Tracker - SCE register, inspections, barrier overrides, defects & actions, KPIs, timeline, documents and email alerts.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

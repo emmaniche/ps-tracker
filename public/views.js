@@ -384,7 +384,7 @@
   const TITLES = { dashboard: 'Dashboard', alerts: 'Alerts', timeline: 'Timeline', sce: 'SCE register', insp: 'Inspections', ovr: 'Overrides', act: 'Actions', kpi: 'KPIs', docs: 'Documents', summary: 'Summary sheet', settings: 'Settings' };
   function chrome() {
     const sm = S.sm, s = S.settings, n = sm.attention.length;
-    return `<aside class="side" id="side"><div class="brand"><div class="brand-mark">${s.logo ? `<img src="${esc(s.logo)}" alt="">` : `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#241700" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 4.5 3.2 8 8 9 4.8-1 8-4.5 8-9V6z"/><path d="m9 12 2 2 4-4"/></svg>`}</div><div><b>${esc(s.project)}</b><small>${esc(s.client ? 'for ' + s.client : s.location)}</small></div></div>
+    return `<aside class="side" id="side"><div class="brand-lockup"><img src="${esc(s.logo || 'brand/oml11-logo.png')}" alt="NNPC E&amp;P Limited and WAGL OML 11 Limited"></div><div class="brand"><div><b>${esc(s.project)}</b><small>${esc(s.client ? 'for ' + s.client : s.location)}</small></div></div>
     <nav class="nav" aria-label="Main">${NAV.map(i => i[0] === 'sep' ? '<div class="sep"></div>' : `<button data-a="nav" data-id="${i[0]}" ${S.view === i[0] ? 'aria-current="page"' : ''}>${ic(i[2])}${i[1]}${i[0] === 'alerts' && n ? `<span class="count">${n}</span>` : ''}</button>`).join('')}</nav>
     <div class="side-foot"><b>${esc(S.user || 'Guest')}</b><br>${S.mode === 'server' ? 'Shared workspace' : 'Saved in this browser'}</div></aside>`;
   }
@@ -466,7 +466,7 @@
 
   /* ---------- login + boot ---------- */
   function showLogin(msg) {
-    $('#root').innerHTML = `<div class="login"><form id="lf"><div><h2>${esc(S.settings.project)}</h2><p style="color:var(--muted);margin:6px 0 0">Enter the team password to continue.</p></div><label class="f"><span>Your name</span><input name="name" value="${esc(S.user)}" required autocomplete="name"></label><label class="f"><span>Password</span><input name="pw" type="password" required autocomplete="current-password" autofocus></label>${msg ? `<div class="note warn">${esc(msg)}</div>` : ''}<button class="btn primary" style="justify-content:center">Sign in</button></form></div>`;
+    $('#root').innerHTML = `<div class="login"><form id="lf"><div class="login-brand"><img src="${esc(S.settings.logo || 'brand/oml11-logo.png')}" alt="NNPC E&amp;P Limited and WAGL OML 11 Limited"></div><div><h2>${esc(S.settings.project)}</h2><p style="color:var(--muted);margin:6px 0 0">Enter the team password to continue.</p></div><label class="f"><span>Your name</span><input name="name" value="${esc(S.user)}" required autocomplete="name"></label><label class="f"><span>Password</span><input name="pw" type="password" required autocomplete="current-password" autofocus></label>${msg ? `<div class="note warn">${esc(msg)}</div>` : ''}<button class="btn primary" style="justify-content:center">Sign in</button></form></div>`;
     $('#lf').onsubmit = async e => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)); S.user = f.name.trim(); APP.lsSet('ps_user', S.user);
       try { const j = await APP.req('POST', '/login', { password: f.pw }); APP.setToken(j.token); boot(true); } catch (err) { showLogin('That password is not right.'); } };
   }

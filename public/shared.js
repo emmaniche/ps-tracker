@@ -19,7 +19,7 @@
   const uid = () => Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
 
   const DEFAULT_SETTINGS = {
-    project: 'Process Safety Tracker', client: '', org: '', bidRef: '', location: 'Field Location', logo: '', timezone: 'Africa/Lagos',
+    project: 'OML 11 JV Process Safety Tracker', client: '', org: '', bidRef: '', location: 'OML 11, Niger Delta', logo: '', timezone: 'Africa/Lagos',
     soonDays: 30,
     recipients: [], notifyOwners: false,
     rules: { overdueInspections: true, dueSoon: true, expiredOverrides: true, overdueActions: true, failedTests: true, overrideMaxHours: 72 },

@@ -158,13 +158,13 @@ async function postWebhook(text) {
 }
 const publicUrl = req => process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || (process.env.RAILWAY_PUBLIC_DOMAIN && 'https://' + process.env.RAILWAY_PUBLIC_DOMAIN) || (req && (req.protocol + '://' + req.get('host'))) || '';
 
-async function sendDigest(link) {
+async function sendDigest(link, site) {
   const S = state.settings, t = PS.todayISO(S.timezone), sent = [];
-  const d = PS.buildDigest(state.db, S, t, { link });
+  const d = PS.buildDigest(state.db, S, t, { link, site });
   if (S.recipients.length) { await sendMail(S.recipients, d.subject, d.text, d.html); sent.push(...S.recipients); }
   if (S.notifyOwners) {
     const owners = [...new Set(state.db.act.filter(a => a.ownerEmail && a.status !== 'Closed').map(a => a.ownerEmail.toLowerCase()))];
-    for (const o of owners) { if (S.recipients.map(x => x.toLowerCase()).includes(o)) continue; const od = PS.buildDigest(state.db, S, t, { link, ownerEmail: o }); if (od.count) { await sendMail(o, od.subject, od.text, od.html); sent.push(o); } }
+    for (const o of owners) { if (S.recipients.map(x => x.toLowerCase()).includes(o)) continue; const od = PS.buildDigest(state.db, S, t, { link, ownerEmail: o, site }); if (od.count) { await sendMail(o, od.subject, od.text, od.html); sent.push(o); } }
   }
   const hook = await postWebhook(d.subject + '\n\n' + d.text);
   if (!sent.length && !hook) throw new Error('Add at least one recipient (or a webhook) in Settings first.');
@@ -197,6 +197,9 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
+/* API responses must never be revalidated from the browser cache: a 304 has no
+   body, and the client would try to parse an empty state reply. */
+app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store, must-revalidate'); next(); });
 app.use(express.json({ limit: '12mb' }));
 
 const PW = process.env.APP_PASSWORD || '';
@@ -256,7 +259,7 @@ app.post('/api/email/test', async (req, res) => {
     res.json({ message: 'Test email sent to ' + S.recipients.join(', ') }); } catch (e) { res.status(400).json({ error: e.message }); }
 });
 app.post('/api/email/digest', async (req, res) => {
-  try { const r = await sendDigest((req.body && req.body.link) || publicUrl(req)); res.json({ message: `Digest sent to ${r.sent.length} recipient${r.sent.length === 1 ? '' : 's'}${r.webhook ? ' and webhook' : ''}` }); } catch (e) { res.status(400).json({ error: e.message }); }
+  try { const r = await sendDigest((req.body && req.body.link) || publicUrl(req), (req.body && req.body.site) || ''); res.json({ message: `Digest sent to ${r.sent.length} recipient${r.sent.length === 1 ? '' : 's'}${r.webhook ? ' and webhook' : ''}` }); } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 /* records */

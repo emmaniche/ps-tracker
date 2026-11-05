@@ -10,7 +10,7 @@ window.APP = (function () {
   const S = {
     db: { sce: [], insp: [], ovr: [], act: [], kpi: [], log: [] },
     settings: clone(P.DEFAULT_SETTINGS), mode: 'static', info: {}, rev: 0,
-    view: 'dashboard', user: lsGet('ps_user'), t: P.todayISO(), sort: {}, flt: {}, q: {}, asset: '', drawer: null, sm: null, tl: { months: 6, types: { insp: 1, ovr: 1, act: 1 }, q: '' }
+    view: 'dashboard', user: lsGet('ps_user'), t: P.todayISO(), sort: {}, flt: {}, q: {}, asset: '', loc: lsGet('ps_loc'), drawer: null, sm: null, tl: { months: 6, types: { insp: 1, ovr: 1, act: 1 }, q: '' }
   };
 
   /* ---------- icons ---------- */
@@ -58,7 +58,7 @@ window.APP = (function () {
   async function req(method, path, body, form) {
     const h = {}; if (token) h.Authorization = 'Bearer ' + token;
     if (body && !form) h['Content-Type'] = 'application/json';
-    const r = await fetch(base + '/api' + path, { method, headers: h, body: form ? body : body ? JSON.stringify(body) : undefined });
+    const r = await fetch(base + '/api' + path, { method, headers: h, body: form ? body : body ? JSON.stringify(body) : undefined, cache: 'no-store' });
     if (r.status === 401) throw { auth: true };
     if (!r.ok) { let m = ''; try { m = (await r.json()).error; } catch (e) { /* not json */ } throw new Error(m || r.statusText); }
     return r.status === 204 ? null : r.json();

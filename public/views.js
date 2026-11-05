@@ -15,11 +15,11 @@
   const F = (k, l, t, o) => Object.assign({ k, l, t: t || 'text' }, o);
   const RISKF = (k, l) => F(k, l, 'sel', { opts: ['H', 'M', 'L'], labels: LV });
   const SCHEMA = {
-    sce: { name: 'SCE register', one: 'Safety-critical element', tagLabel: true, fields: [F('tag', 'SCE tag no', 'text', { req: 1 }), F('asset', 'Asset'), F('location', 'Location'), F('status', 'Status', 'sel', { opts: ['Active', 'Retired'] }), F('desc', 'SCE description', 'text', { full: 1 }), F('barrier', 'Barrier type', 'sel', { opts: ['Preventive', 'Mitigative'] }), F('sil', 'SIL rating', 'sel', { opts: ['N/A', 'SIL 1', 'SIL 2', 'SIL 3', 'SIL 4'] }), F('ps', 'Performance standard ref'), RISKF('risk', 'Risk ranking'), F('owner', 'Responsible owner'), F('reg', 'Regulatory ref'), F('notes', 'Notes', 'area', { full: 1 })] },
+    sce: { name: 'SCE register', one: 'Safety-critical element', tagLabel: true, fields: [F('tag', 'SCE tag no', 'text', { req: 1 }), F('asset', 'Asset'), F('site', 'Location', 'sel', { opts: [] }), F('location', 'Area / unit'), F('status', 'Status', 'sel', { opts: ['Active', 'Retired'] }), F('desc', 'SCE description', 'text', { full: 1 }), F('barrier', 'Barrier type', 'sel', { opts: ['Preventive', 'Mitigative'] }), F('sil', 'SIL rating', 'sel', { opts: ['N/A', 'SIL 1', 'SIL 2', 'SIL 3', 'SIL 4'] }), F('ps', 'Performance standard ref'), RISKF('risk', 'Risk ranking'), F('owner', 'Responsible owner'), F('reg', 'Regulatory ref'), F('notes', 'Notes', 'area', { full: 1 })] },
     insp: { name: 'Inspections & tests', one: 'Inspection / test', fields: [F('tag', 'SCE tag no', 'tag', { req: 1 }), F('asset', 'Asset'), F('type', 'Inspection / test type', 'text', { full: 1, req: 1 }), F('freq', 'Test frequency (days)', 'num', { req: 1 }), F('last', 'Last test date', 'date'), F('result', 'Test result', 'sel', { opts: ['Pass', 'Conditional', 'Fail'] }), F('auth', 'Verification authority'), F('remarks', 'Remarks', 'area', { full: 1 })] },
     ovr: { name: 'Barrier overrides', one: 'Barrier override', fields: [F('tag', 'SCE tag no', 'tag', { req: 1 }), F('asset', 'Asset'), F('type', 'Type', 'sel', { opts: ['Override', 'Bypass', 'Inhibit'] }), F('status', 'Status', 'sel', { opts: ['Open', 'Closed'] }), F('start', 'Start', 'dt'), F('end', 'End', 'dt'), F('risk', 'Risk assessment conducted', 'sel', { opts: ['Yes', 'No'] }), F('approver', 'Approved by'), F('comp', 'Compensating measure in place', 'area', { full: 1 }), F('notes', 'Notes', 'area', { full: 1 })] },
     act: { name: 'Defects & actions', one: 'Action item', fields: [F('tag', 'SCE tag no', 'tag', { req: 1 }), F('asset', 'Asset'), F('desc', 'Defect description', 'area', { full: 1, req: 1 }), F('identified', 'Identified date', 'date'), RISKF('risk', 'Risk level'), F('temp', 'Temporary control in place', 'area', { full: 1 }), F('corrective', 'Corrective action', 'area', { full: 1 }), F('owner', 'Action owner'), F('ownerEmail', 'Owner email', 'email', { hint: 'Used for owner reminders' }), F('target', 'Target closure date', 'date'), F('status', 'Status', 'sel', { opts: ['Open', 'In Progress', 'Closed'] }), F('progress', 'Progress', 'range', { full: 1 }), F('notes', 'Progress notes', 'area', { full: 1 })] },
-    kpi: { name: 'Process safety KPIs', one: 'KPI month', fields: [F('month', 'Month', 'month', { req: 1 }), F('pop', 'Total SCE population', 'num'), F('verified', 'Total verified this month', 'num'), F('overdue', 'Overdue inspections', 'num'), F('topEvent', 'Top event', 'text', { full: 1 }), F('lopc', 'LOPC incidents', 'num'), F('hipo', 'High-potential near misses', 'num'), F('overrides', 'Active overrides', 'num')] }
+    kpi: { name: 'Process safety KPIs', one: 'KPI month', fields: [F('month', 'Month', 'month', { req: 1 }), F('site', 'Location', 'sel', { opts: [] }), F('pop', 'Total SCE population', 'num'), F('verified', 'Total verified this month', 'num'), F('overdue', 'Overdue inspections', 'num'), F('topEvent', 'Top event', 'text', { full: 1 }), F('lopc', 'LOPC incidents', 'num'), F('hipo', 'High-potential near misses', 'num'), F('overrides', 'Active overrides', 'num')] }
   };
   const DEFAULTS = {
     sce: () => ({ status: 'Active', barrier: 'Preventive', risk: 'M', sil: 'N/A' }),
@@ -36,17 +36,33 @@
   const actStateChip = i => ({ overdue: chip('Overdue', 'red'), progress: chip('In progress', 'blue'), open: chip('Open', 'amber'), closed: chip('Closed', 'green') }[i.state]);
   const sceLevel = s => (S.sm.states[s.id] || { level: 'grey' }).level;
   const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
-  const kpiSorted = () => S.db.kpi.slice().sort((a, b) => (a.month || '').localeCompare(b.month || ''));
+  /* ---------- locations ---------- */
+  const locs = () => (S.settings.locations || []).slice();
+  const smap = () => S._smap || (S._smap = P.siteMap(S.db));
+  const siteOf = r => P.siteOf(r, smap(), S.db);
+  const scopedList = col => S.loc ? (col === 'kpi' ? (r => (r.site || '') === S.loc) : (r => siteOf(r) === S.loc)) : (() => true);
+  const kpiRaw = () => S.loc ? S.db.kpi.filter(r => (r.site || '') === S.loc) : S.db.kpi;
+  /* monthly series: the location's own rows when one is selected, otherwise summed across locations */
+  const kpiSeries = rows => {
+    if (S.loc) return rows.slice().sort((a, b) => (a.month || '').localeCompare(b.month || ''));
+    const by = {};
+    rows.forEach(r => { const m = (r.month || '').slice(0, 7);
+      const o = by[m] || (by[m] = { month: r.month, pop: 0, verified: 0, overdue: 0, lopc: 0, hipo: 0, overrides: 0, agg: true });
+      o.pop += +r.pop || 0; o.verified += +r.verified || 0; o.overdue += +r.overdue || 0;
+      o.lopc += +r.lopc || 0; o.hipo += +r.hipo || 0; o.overrides += +r.overrides || 0; });
+    return Object.values(by).sort((a, b) => (a.month || '').localeCompare(b.month || ''));
+  };
+  const kpiSorted = () => kpiSeries(kpiRaw());
   const label = (col, r) => col === 'kpi' ? fmtMonth(r.month) : `${r.tag || ''}${col === 'sce' ? '' : ' · ' + (r.type || r.corrective || r.desc || '')}`.slice(0, 60);
 
   /* ---------- table definitions ---------- */
   const T = (h, v, s, cls) => ({ h, v, s, cls });
   const TABLES = {
-    sce: [T('Tag', r => `<span class="tagno">${esc(r.tag)}</span>`, r => r.tag), T('Asset', r => esc(r.asset), r => r.asset), T('Description', r => esc(r.desc), r => r.desc), T('Barrier', r => chip(r.barrier || '—', r.barrier === 'Mitigative' ? 'blue' : ''), r => r.barrier), T('SIL', r => esc(r.sil), r => r.sil), T('Risk', r => riskChip(r.risk), r => 'HML'.indexOf(r.risk)), T('Owner', r => esc(r.owner), r => r.owner), T('Barrier state', r => r.status === 'Retired' ? chip('Retired') : chip(...stateChip[sceLevel(r)]), r => ['red', 'amber', 'green', 'grey'].indexOf(sceLevel(r))), T('', dnum)],
+    sce: [T('Tag', r => `<span class="tagno">${esc(r.tag)}</span>`, r => r.tag), T('Asset', r => esc(r.asset), r => r.asset), T('Location', r => esc(r.site || '—'), r => r.site || ''), T('Description', r => esc(r.desc), r => r.desc), T('Barrier', r => chip(r.barrier || '—', r.barrier === 'Mitigative' ? 'blue' : ''), r => r.barrier), T('SIL', r => esc(r.sil), r => r.sil), T('Risk', r => riskChip(r.risk), r => 'HML'.indexOf(r.risk)), T('Owner', r => esc(r.owner), r => r.owner), T('Barrier state', r => r.status === 'Retired' ? chip('Retired') : chip(...stateChip[sceLevel(r)]), r => ['red', 'amber', 'green', 'grey'].indexOf(sceLevel(r))), T('', dnum)],
     insp: [T('Tag', r => `<span class="tagno">${esc(r.tag)}</span>`, r => r.tag), T('Asset', r => esc(r.asset), r => r.asset), T('Test type', r => esc(r.type), r => r.type), T('Every (d)', r => r.freq, r => +r.freq, 'num'), T('Last test', r => fmtDate(r.last), r => r.last), T('Next due', r => fmtDate(iI(r).next), r => iI(r).next || ''), T('Overdue?', r => inspStateChip(iI(r)), r => iI(r).days == null ? 9e9 : iI(r).days), T('Result', r => resChip(r.result), r => r.result), T('Verifier', r => esc(r.auth), r => r.auth), T('', dnum)],
     ovr: [T('Tag', r => `<span class="tagno">${esc(r.tag)}</span>`, r => r.tag), T('Asset', r => esc(r.asset), r => r.asset), T('Type', r => esc(r.type), r => r.type), T('Start', r => fmtDate(r.start), r => r.start), T('End', r => fmtDate(r.end), r => r.end), T('Hours', r => oI(r).hours == null ? '—' : oI(r).hours, r => oI(r).hours, 'num'), T('Risk assessed', r => chip(r.risk || '—', r.risk === 'Yes' ? 'green' : 'red'), r => r.risk), T('Approved by', r => esc(r.approver), r => r.approver), T('Status', r => ovrStateChip(oI(r)), r => oI(r).state), T('', dnum)],
     act: [T('Tag', r => `<span class="tagno">${esc(r.tag)}</span>`, r => r.tag), T('Defect', r => esc(P.short(r.desc, 70)), r => r.desc), T('Risk', r => riskChip(r.risk), r => 'HML'.indexOf(r.risk)), T('Corrective action', r => esc(P.short(r.corrective, 70)), r => r.corrective), T('Owner', r => esc(r.owner), r => r.owner), T('Target', r => fmtDate(r.target), r => r.target), T('Progress', r => `<div class="bar rowbar"><i class="${aI(r).state === 'overdue' ? 'r' : 'g'}" style="width:${+r.progress || 0}%"></i></div>`, r => +r.progress || 0), T('Status', r => actStateChip(aI(r)), r => aI(r).state), T('', dnum)],
-    kpi: [T('Month', r => `<b>${fmtMonth(r.month)}</b>`, r => r.month), T('SCE population', r => r.pop, r => +r.pop, 'num'), T('Verified', r => r.verified, r => +r.verified, 'num'), T('% verified', r => pct(r.verified, r.pop) + '%', r => pct(r.verified, r.pop), 'num'), T('Overdue', r => r.overdue, r => +r.overdue, 'num'), T('% overdue', r => pct(r.overdue, r.pop) + '%', r => pct(r.overdue, r.pop), 'num'), T('Top event', r => esc(r.topEvent), r => r.topEvent), T('LOPC', r => r.lopc, r => +r.lopc, 'num'), T('HiPo', r => r.hipo, r => +r.hipo, 'num'), T('Overrides', r => r.overrides, r => +r.overrides, 'num'), T('', dnum)]
+    kpi: [T('Month', r => `<b>${fmtMonth(r.month)}</b>`, r => r.month), T('Location', r => esc(r.site || 'All'), r => r.site || ''), T('SCE population', r => r.pop, r => +r.pop, 'num'), T('Verified', r => r.verified, r => +r.verified, 'num'), T('% verified', r => pct(r.verified, r.pop) + '%', r => pct(r.verified, r.pop), 'num'), T('Overdue', r => r.overdue, r => +r.overdue, 'num'), T('% overdue', r => pct(r.overdue, r.pop) + '%', r => pct(r.overdue, r.pop), 'num'), T('Top event', r => esc(r.topEvent), r => r.topEvent), T('LOPC', r => r.lopc, r => +r.lopc, 'num'), T('HiPo', r => r.hipo, r => +r.hipo, 'num'), T('Overrides', r => r.overrides, r => +r.overrides, 'num'), T('', dnum)]
   };
   const FILTERS = {
     sce: [['all', 'All', () => true], ['red', 'Action needed', r => r.status !== 'Retired' && sceLevel(r) === 'red'], ['amber', 'Watch', r => r.status !== 'Retired' && sceLevel(r) === 'amber'], ['green', 'Healthy', r => r.status !== 'Retired' && sceLevel(r) === 'green'], ['grey', 'Not assured', r => r.status !== 'Retired' && sceLevel(r) === 'grey'], ['ret', 'Retired', r => r.status === 'Retired']],
@@ -66,6 +82,7 @@
   function rowsFor(col, ignoreFilter) {
     let r = S.db[col].slice();
     if (S.asset && col !== 'kpi') r = r.filter(x => x.asset === S.asset);
+    if (S.loc) r = r.filter(scopedList(col));
     const q = (S.q[col] || '').trim().toLowerCase();
     if (q) r = r.filter(x => Object.entries(x).filter(([k]) => k !== 'docs').map(e => e[1]).join(' ').toLowerCase().includes(q) || (x.docs || []).some(d => d.name.toLowerCase().includes(q)));
     if (!ignoreFilter) { const f = FILTERS[col].find(f => f[0] === (S.flt[col] || 'all')); if (f) r = r.filter(f[2]); }
@@ -97,8 +114,8 @@
   }
 
   /* ---------- dashboard ---------- */
-  function strip(sm, interactive) {
-    const list = S.db.sce.filter(s => s.status !== 'Retired');
+  function strip(sm, interactive, list) {
+    list = list || S.db.sce.filter(s => s.status !== 'Retired');
     if (!list.length) return '<div style="color:var(--on-ink-muted);padding:14px 0">Add safety-critical elements to build your barrier strip.</div>';
     return `<div class="strip">${list.map(s => { const st = sm.states[s.id]; const tip = `${s.tag} — ${s.desc || ''}\n${st.reasons.length ? st.reasons.join('; ') : st.level === 'grey' ? 'No inspections linked yet' : 'All checks on track'}`;
       return interactive ? `<button class="cell ${st.level} ${s.barrier === 'Mitigative' ? 'mit' : ''}" data-a="open" data-col="sce" data-id="${s.id}" title="${esc(tip)}" aria-label="${esc(tip)}"></button>` : `<span class="cell ${st.level} ${s.barrier === 'Mitigative' ? 'mit' : ''}" title="${esc(tip)}"></span>`; }).join('')}</div>`;
@@ -110,9 +127,9 @@
     const sm = S.sm, { I, O, A, B } = sm, k = kpiSorted(), last = k[k.length - 1];
     const col = sm.index >= 90 ? 'var(--green)' : sm.index >= 75 ? '#7bd88f' : sm.index >= 60 ? 'var(--signal)' : 'var(--red)';
     const C = 2 * Math.PI * 52;
-    const risk = ['H', 'M', 'L'].map(r => S.db.act.filter(a => a.risk === r && a.status !== 'Closed').length);
+    const risk = ['H', 'M', 'L'].map(r => S.db.act.filter(a => a.risk === r && a.status !== 'Closed' && (!S.loc || siteOf(a) === S.loc)).length);
     return `<div class="hero"><div class="idx"><div class="ring"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="11"/><circle cx="60" cy="60" r="52" fill="none" stroke="${col}" stroke-width="11" stroke-linecap="round" stroke-dasharray="${sm.empty ? 0 : C * sm.index / 100} ${C}"/></svg><div class="v"><div>${sm.empty ? '–' : sm.index}<small>${sm.empty ? 'no data' : 'of 100'}</small></div></div></div><div><div class="rt">${sm.empty ? 'Ready to start' : sm.rating}</div><div class="sub">${sm.empty ? 'Add your SCE register, or import your Excel tracker under Settings.' : 'Process safety health index. Weighted from inspection timeliness, action closure, override control and test results.'}</div></div></div>
-    <div class="strip-wrap"><h3>Barrier integrity <small>${B.total} safety-critical elements · ${B.red} need action · ${B.amber} on watch</small></h3>${strip(sm, true)}${legend}</div></div>
+    <div class="strip-wrap"><h3>Barrier integrity <small>${B.total} safety-critical elements · ${B.red} need action · ${B.amber} on watch</small></h3>${strip(sm, true, S.loc ? P.scopeDb(S.db, S.loc).sce : null)}${legend}</div></div>
     <div class="grid g-4" style="margin-bottom:18px">
       <div class="panel stat ${I.overdue ? 'red' : 'green'}"><span class="n">${I.overdue}</span><span class="l">Overdue inspections</span><span class="d">${I.soon} more due within ${sm.soon} days · ${I.onTimePct}% on time</span>${segBar(I.ok, I.soon, I.overdue)}</div>
       <div class="panel stat ${O.expired || O.norisk ? 'red' : O.open ? 'amber' : 'green'}"><span class="n">${O.open}</span><span class="l">Open barrier overrides</span><span class="d">${O.expired + O.norisk ? (O.expired + O.norisk) + ' expired or without risk assessment' : 'All assessed and in date'}</span></div>
@@ -131,7 +148,7 @@
 
   /* ---------- alerts ---------- */
   function alertsView() {
-    const sm = S.sm, d = P.buildDigest(S.db, S.settings, S.t);
+    const sm = S.sm, d = P.buildDigest(S.db, S.settings, S.t, { site: S.loc });
     const rec = S.settings.recipients;
     return `<div class="page-head"><div><h2>Alerts & notifications</h2><p>Everything that needs a decision today. The same list goes out by email to the people you choose in Settings.</p></div><div class="sp"><button class="btn" data-a="preview">Preview email</button><button class="btn primary" data-a="senddigest">${ic('send')}Send digest now</button></div></div>
     <div class="note ${rec.length ? '' : 'warn'}" style="margin-bottom:16px">${rec.length ? `Digest goes to ${rec.map(esc).join(', ')}${S.mode === 'server' && S.settings.digestEnabled ? ` and is sent automatically every day at ${String(S.settings.digestHour).padStart(2, '0')}:00 (${esc(S.settings.timezone)}).` : '.'}` : 'No email recipients yet. Add them under <a href="#/settings">Settings</a> to switch on notifications.'}</div>
@@ -145,7 +162,7 @@
   function timeline() {
     const Tl = S.tl, start = P.addDays(S.t, -45), days = Math.round(Tl.months * 30.4), end = P.addDays(start, days);
     const pos = d => Math.max(0, Math.min(100, P.diffDays(P.parse(d.slice(0, 10)), P.parse(start)) / days * 100));
-    const q = Tl.q.toLowerCase(), okAsset = r => !S.asset || r.asset === S.asset, okQ = r => !q || JSON.stringify(r).toLowerCase().includes(q);
+    const q = Tl.q.toLowerCase(), okAsset = r => (!S.asset || r.asset === S.asset) && (!S.loc || siteOf(r) === S.loc), okQ = r => !q || JSON.stringify(r).toLowerCase().includes(q);
     const LC = { overdue: 'red', soon: 'amber', ok: 'green', none: 'grey', expired: 'red', norisk: 'red', long: 'amber', active: 'amber', closed: 'grey', progress: 'blue', open: 'blue' };
     const row = (col, r, title, sub, bars, ms) => `<div class="tl-row" data-a="open" data-col="${col}" data-id="${r.id}"><div class="tl-lab"><b>${esc(title)}</b><small>${esc(sub)}</small></div><div class="tl-track">${bars}${ms || ''}</div></div>`;
     const bar = (a, b, c, soft) => { const l = pos(a), w = Math.max(.7, pos(b) - l); return `<span class="tl-bar ${c} ${soft ? 'soft' : ''}" style="left:${l}%;width:${w}%"></span>`; };
@@ -173,40 +190,83 @@
   const fmtSize = n => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n > 1024 ? Math.round(n / 1024) + ' KB' : (n || 0) + ' B';
   const ext = n => (/\.([a-z0-9]{1,4})$/i.exec(n) || [, 'file'])[1];
   function docsView() {
-    const q = (S.q.docs || '').toLowerCase(), list = allDocs().filter(x => !q || (x.d.name + ' ' + label(x.col, x.r) + ' ' + (x.d.by || '')).toLowerCase().includes(q));
+    const q = (S.q.docs || '').toLowerCase();
+    const list = allDocs().filter(x => !S.loc || (x.col === 'kpi' ? (x.r.site || '') === S.loc : siteOf(x.r) === S.loc)).filter(x => !q || (x.d.name + ' ' + label(x.col, x.r) + ' ' + (x.d.by || '')).toLowerCase().includes(q));
     return `<div class="page-head"><div><h2>Documents</h2><p>Every file and link attached to an SCE, inspection, override or action, in one searchable place. Open a record to add more.</p></div></div>
     <div class="filters"><input class="search" type="search" placeholder="Search documents…" value="${esc(S.q.docs || '')}" data-in="q" data-col="docs" aria-label="Search documents"></div>
     <div class="panel" id="tbl">${docsTable(list)}</div>`;
   }
   const docsTable = list => list.length ? `<div class="tbl-wrap"><table class="t"><thead><tr><th>Document</th><th>Attached to</th><th>Module</th><th>Size</th><th>Added</th></tr></thead><tbody>${list.map(({ d, col, r }) => `<tr data-a="open" data-col="${col}" data-id="${r.id}"><td><b>${esc(d.name)}</b></td><td>${esc(label(col, r))}</td><td>${chip(SCHEMA[col].name)}</td><td>${d.kind === 'link' ? 'Link' : fmtSize(d.size)}</td><td>${esc(d.by || '')} · ${fmtDate((d.added || '').slice(0, 10))}</td></tr>`).join('')}</tbody></table></div>` : `<div class="empty"><b>No documents yet</b>Open any record and drop files into its Documents section: permits, inspection reports, photos, certificates.</div>`;
 
-  /* ---------- summary sheet ---------- */
+  /* ---------- reports ---------- */
   function summaryView() {
-    const sm = S.sm, s = S.settings, { I, O, A, B } = sm, k = kpiSorted().slice(-6);
-    const tbl = (head, rows) => rows.length ? `<table><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '<p style="color:#5b6b75">None.</p>';
-    const open = S.db.act.filter(a => a.status !== 'Closed').sort((a, b) => ('HML'.indexOf(a.risk) - 'HML'.indexOf(b.risk)) || (a.target || '').localeCompare(b.target || ''));
-    return `<div class="page-head"><div><h2>Summary sheet</h2><p>One printable page for review meetings and client reporting.</p></div><div class="sp"><button class="btn" data-a="xlsx">${ic('down')}Excel workbook</button><button class="btn primary" data-a="print">${ic('print')}Print or save as PDF</button></div></div>
-    <article class="sheet"><div style="display:flex;gap:18px;align-items:flex-start;justify-content:space-between"><div><h1>${esc(s.project)}</h1><div class="meta">${s.client ? 'Prepared for ' + esc(s.client) + ' · ' : ''}${s.org ? esc(s.org) + ' · ' : ''}${esc(s.location)}${s.bidRef ? ' · Ref ' + esc(s.bidRef) : ''}</div><div class="meta">Report date ${fmtDate(S.t)}</div></div><img src="${esc(s.logo || 'brand/oml11-logo.png')}" alt="NNPC E&amp;P Limited and WAGL OML 11 Limited" style="max-height:64px;max-width:220px;background:#fff;border-radius:6px;padding:4px 6px"></div>
-    <div class="kpis"><div><b style="color:${sm.index >= 75 ? '#1f9d6b' : sm.index >= 60 ? '#c98200' : '#d6382f'}">${sm.index}</b><span>Health index · ${sm.rating}</span></div><div><b>${I.onTimePct}%</b><span>Inspections on time (${I.overdue} overdue of ${I.total})</span></div><div><b>${O.open}</b><span>Open overrides (${O.expired + O.norisk} non-compliant)</span></div><div><b>${A.open}</b><span>Open actions (${A.overdue} overdue)</span></div></div>
-    <h2>Barrier integrity</h2><p style="margin:0 0 6px">${B.total} safety-critical elements: ${B.green} healthy, ${B.amber} on watch, ${B.red} needing action, ${B.grey} not yet assured. ${B.preventive} preventive and ${B.mitigative} mitigative barriers.</p>${strip(sm, false)}
-    <h2>Performance by asset</h2>${tbl(['Asset', 'SCEs', 'Barrier health', 'Overdue inspections', 'Open overrides', 'Open actions'], sm.perAsset.map(p => [`<b>${esc(p.asset)}</b>`, p.sce, `<div style="display:flex;gap:8px;align-items:center"><div class="bar" style="width:90px"><i class="${p.health >= 80 ? 'g' : p.health >= 60 ? 'a' : 'r'}" style="width:${p.health}%"></i></div>${p.health}%</div>`, p.overdue, p.openOvr, p.openAct]))}
-    <h2>Needs attention</h2>${tbl(['Item', 'Detail', 'Asset'], sm.attention.slice(0, 15).map(x => [`<b>${esc(x.title)}</b>`, esc(x.sub), esc(x.asset || '')]))}
-    <h2>Open actions</h2>${tbl(['Tag', 'Defect', 'Risk', 'Owner', 'Target', 'Status'], open.slice(0, 15).map(a => [`<b>${esc(a.tag)}</b>`, esc(P.short(a.desc, 80)), riskChip(a.risk), esc(a.owner), fmtDate(a.target), actStateChip(aI(a))]))}
-    <h2>Open barrier overrides</h2>${tbl(['Tag', 'Type', 'Window', 'Hours', 'Risk assessed', 'Status'], S.db.ovr.filter(o => o.status !== 'Closed').map(o => [`<b>${esc(o.tag)}</b>`, esc(o.type), `${fmtDate(o.start)} to ${fmtDate(o.end)}`, oI(o).hours, esc(o.risk), ovrStateChip(oI(o))]))}
-    <h2>Process safety KPIs</h2>${tbl(['Month', 'Population', 'Verified', '% verified', 'Overdue', '% overdue', 'LOPC', 'HiPo', 'Overrides'], k.map(r => [fmtMonth(r.month), r.pop, r.verified, pct(r.verified, r.pop) + '%', r.overdue, pct(r.overdue, r.pop) + '%', r.lopc, r.hipo, r.overrides]))}
-    <p style="margin-top:26px;color:#5b6b75;font-size:12.5px">Health index = 40% inspections on time + 25% actions on time + 20% overrides controlled + 15% test results (a Fail counts fully, a Conditional counts half).</p></article>`;
+    const s = S.settings, ls = locs();
+    const unassigned = S.db.sce.filter(x => !siteOf(x)).length;
+    const card = l => {
+      const p = (S.sm.perSite || []).find(x => x.site === l) || { empty: true, index: 0, red: 0, amber: 0, sce: 0, overdue: 0 };
+      const tone = p.empty ? 'var(--grey)' : p.index >= 75 ? 'var(--green)' : p.index >= 60 ? 'var(--amber)' : 'var(--red)';
+      return `<button class="loc-card" data-a="setloc" data-id="${esc(l)}">
+        <span class="lc-top"><b>${esc(l)}</b><em style="color:${tone}">${p.empty ? '–' : p.index}</em></span>
+        <span class="lc-meta">${p.empty ? 'No safety-critical elements yet' : `${p.sce} SCE · ${p.red} need action · ${p.overdue} test${p.overdue === 1 ? '' : 's'} overdue`}</span>
+        <span class="lc-bar"><i style="width:${p.empty ? 0 : p.index}%;background:${tone}"></i></span>
+      </button>`;
+    };
+    const sheet = (title, smx, dbx) => {
+      const { I, O, A, B } = smx, k = kpiSeries(dbx.kpi || []).slice(-6);
+      const tbl = (head, rows) => rows.length ? `<table><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '<p style="color:#5b6b75">None.</p>';
+      const openAct = (dbx.act || []).filter(a => a.status !== 'Closed').sort((a, b) => ('HML'.indexOf(a.risk) - 'HML'.indexOf(b.risk)) || (a.target || '').localeCompare(b.target || ''));
+      const openOvr = (dbx.ovr || []).filter(o => o.status !== 'Closed');
+      const live = (dbx.sce || []).filter(x => x.status !== 'Retired');
+      const meta = [s.client ? 'Prepared for ' + s.client : '', s.org, title, s.bidRef ? 'Ref ' + s.bidRef : ''].filter(Boolean).map(esc).join(' · ');
+      return `<article class="sheet">
+      <div class="sheet-head"><div><h1>${esc(s.project)}</h1><div class="meta">${meta}</div><div class="meta">Report date ${fmtDate(S.t)}</div></div><img src="${esc(s.logo || 'brand/oml11-logo.png')}" alt="NNPC E&amp;P Limited and WAGL OML 11 Limited"></div>
+      <div class="kpis"><div><b style="color:${smx.index >= 75 ? '#1f9d6b' : smx.index >= 60 ? '#c98200' : '#d6382f'}">${smx.empty ? '–' : smx.index}</b><span>Health index · ${smx.empty ? 'no data' : smx.rating}</span></div><div><b>${I.onTimePct}%</b><span>Inspections on time (${I.overdue} overdue of ${I.total})</span></div><div><b>${O.open}</b><span>Open overrides (${O.expired + O.norisk} non-compliant)</span></div><div><b>${A.open}</b><span>Open actions (${A.overdue} overdue)</span></div></div>
+      <h2>Barrier integrity</h2><p style="margin:0 0 6px">${B.total} safety-critical elements: ${B.green} healthy, ${B.amber} on watch, ${B.red} needing action, ${B.grey} not yet assured. ${B.preventive} preventive and ${B.mitigative} mitigative barriers.</p>${strip(smx, false, live)}
+      ${smx.perAsset.length ? `<h2>Performance by asset</h2>${tbl(['Asset', 'SCEs', 'Barrier health', 'Overdue inspections', 'Open overrides', 'Open actions'], smx.perAsset.map(p => [`<b>${esc(p.asset)}</b>`, p.sce, `<div style="display:flex;gap:8px;align-items:center"><div class="bar" style="width:90px"><i class="${p.health >= 80 ? 'g' : p.health >= 60 ? 'a' : 'r'}" style="width:${p.health}%"></i></div>${p.health}%</div>`, p.overdue, p.openOvr, p.openAct]))}` : ''}
+      ${!smx.site && smx.perSite.length ? `<h2>Performance by location</h2>${tbl(['Location', 'SCEs', 'Health', 'Need action', 'Tests overdue', 'Open overrides', 'Open actions'], smx.perSite.map(p => [`<b>${esc(p.site)}</b>`, p.empty ? '—' : p.sce, p.empty ? '—' : p.index, p.empty ? '—' : p.red, p.empty ? '—' : p.overdue, p.empty ? '—' : p.openOvr, p.empty ? '—' : p.openAct]))}` : ''}
+      <h2>Needs attention</h2>${tbl(['Item', 'Detail', 'Asset / location'], smx.attention.slice(0, 18).map(x => [`<b>${esc(x.title)}</b>`, esc(x.sub), esc(x.site ? x.site + (x.asset ? ' · ' + x.asset : '') : x.asset || '')]))}
+      <h2>Open actions</h2>${tbl(['Tag', 'Defect', 'Risk', 'Owner', 'Target', 'Status'], openAct.slice(0, 15).map(a => [`<b>${esc(a.tag)}</b>`, esc(P.short(a.desc, 80)), riskChip(a.risk), esc(a.owner), fmtDate(a.target), actStateChip(aI(a))]))}
+      <h2>Open barrier overrides</h2>${tbl(['Tag', 'Type', 'Window', 'Hours', 'Risk assessed', 'Status'], openOvr.map(o => [`<b>${esc(o.tag)}</b>`, esc(o.type), `${fmtDate(o.start)} to ${fmtDate(o.end)}`, oI(o).hours, esc(o.risk), ovrStateChip(oI(o))]))}
+      <h2>Process safety KPIs</h2>${tbl(['Month', 'Population', 'Verified', '% verified', 'Overdue', '% overdue', 'LOPC', 'HiPo', 'Overrides'], k.map(r => [fmtMonth(r.month), r.pop, r.verified, pct(r.verified, r.pop) + '%', r.overdue, pct(r.overdue, r.pop) + '%', r.lopc, r.hipo, r.overrides]))}
+      <p style="margin-top:26px;color:#5b6b75;font-size:12.5px">Health index = 40% inspections on time + 25% actions on time + 20% overrides controlled + 15% test results (a Fail counts fully, a Conditional counts half). Prepared from the OML 11 JV Process Safety Tracker.</p></article>`;
+    };
+
+    const head = `<div class="page-head"><div><h2>Reports</h2><p>${S.loc ? 'Location report for <b>' + esc(S.loc) + '</b>. Change the location in the top bar or on the cards below.' : 'One pack for every location, or a focused report per location. Pick a card to drill in.'}</p></div>
+      <div class="sp"><select data-in="loc" class="locpick" aria-label="Report location"><option value="">All locations</option>${ls.map(l => `<option ${l === S.loc ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
+      ${!S.loc ? `<button class="pill" aria-pressed="${!!S.pack}" data-a="pack">One page per location</button>` : ''}
+      <button class="btn" data-a="xlsx">${ic('down')}Excel</button><button class="btn primary" data-a="print">${ic('print')}Print / PDF</button></div></div>`;
+
+    const cards = S.loc ? '' : `<div class="loc-grid">${ls.map(card).join('')}</div>
+      ${unassigned ? `<div class="note warn" style="margin-bottom:16px">${unassigned} safety-critical element${unassigned === 1 ? ' is' : 's are'} not assigned to a location yet, so ${unassigned === 1 ? 'it does' : 'they do'} not appear in any location report. <a href="#/settings">Assign them in Settings</a>.</div>` : ''}`;
+
+    if (S.loc) return head + `<div class="sheet-wrap">${sheet(S.loc, S.sm, P.scopeDb(S.db, S.loc))}</div>`;
+    if (S.pack) return head + cards + `<div class="pack">${ls.map(l => sheet(l, P.summarize(S.db, s, S.t, { site: l }), P.scopeDb(S.db, l))).join('')}</div>`;
+    return head + cards + `<div class="sheet-wrap">${sheet('All locations', S.sm, S.db)}</div>`;
   }
 
   /* ---------- settings ---------- */
   const sw = (k, l, sub, v) => `<label class="switch"><input type="checkbox" data-set="${k}" ${v ? 'checked' : ''}><span>${l}${sub ? `<br><small style="color:var(--muted)">${sub}</small>` : ''}</span></label>`;
   const inp = (k, l, v, o = {}) => `<label class="f ${o.full ? 'full' : ''}"><span>${l}</span><input ${o.type ? `type="${o.type}"` : ''} data-set="${k}" value="${esc(v)}" placeholder="${esc(o.ph || '')}">${o.hint ? `<small>${o.hint}</small>` : ''}</label>`;
+  function assetAssignRows() {
+    const assets = [...new Set(S.db.sce.map(x => x.asset || ''))].sort((a, b) => a.localeCompare(b)), ls = locs();
+    return assets.map(a => {
+      const list = S.db.sce.filter(x => (x.asset || '') === a), sites = [...new Set(list.map(x => x.site || ''))];
+      const cur = sites.length === 1 ? sites[0] : '__mixed';
+      return `<label class="f"><span>${esc(a || 'No asset')} <small style="color:var(--muted)">(${list.length})</small></span><select data-in="assign" data-asset="${esc(a)}">${cur === '__mixed' ? '<option value="__mixed" selected disabled>Mixed — choose one</option>' : ''}<option value="" ${cur === '' ? 'selected' : ''}>Unassigned</option>${ls.map(l => `<option ${l === cur ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
+    }).join('');
+  }
   function settingsView() {
     const s = S.settings, R = s.rules, srv = S.mode === 'server', em = S.info.email || {};
     return `<div class="page-head"><div><h2>Settings</h2><p>Branding, who gets notified and how, and your data. Changes save automatically.</p></div></div>
     <div class="grid" style="max-width:920px">
     <div class="panel"><div class="panel-h"><h3>Project & branding</h3></div><div class="panel-b set-grid">
-      ${inp('project', 'Project name', s.project)}${inp('client', 'Client', s.client, { ph: 'Who the report is prepared for' })}${inp('org', 'Your organisation', s.org)}${inp('bidRef', 'Bid / contract reference', s.bidRef)}${inp('location', 'Field location', s.location)}${inp('timezone', 'Time zone', s.timezone, { ph: 'Africa/Lagos', hint: 'IANA name, used for "today" and the daily email' })}
+      ${inp('project', 'Project name', s.project)}${inp('client', 'Client', s.client, { ph: 'Who the report is prepared for' })}${inp('org', 'Your organisation', s.org)}${inp('bidRef', 'Bid / contract reference', s.bidRef)}${inp('location', 'Operating area', s.location, { hint: 'Shown in the sidebar when no location is selected' })}${inp('timezone', 'Time zone', s.timezone, { ph: 'Africa/Lagos', hint: 'IANA name, used for "today" and the daily email' })}
       <label class="f full"><span>Logo (shown on the sidebar and summary sheet)</span><input type="file" accept="image/*" data-a="logo"></label>${s.logo ? `<div class="full"><img src="${esc(s.logo)}" alt="Logo" style="max-height:48px"> <button class="btn sm" data-a="rmlogo">Remove logo</button></div>` : ''}</div></div>
+    <div class="panel"><div class="panel-h"><h3>Locations</h3><small>Reporting units</small></div><div class="panel-b">
+      <label class="f"><span>Locations</span><div class="chips-in">${s.locations.map((l, i) => `<span class="chip blue">${esc(l)} <button data-a="rmloc" data-id="${i}" aria-label="Remove ${esc(l)}">×</button></span>`).join('')}<input data-in="addloc" placeholder="Type a location and press Enter" aria-label="Add a location"></div></label>
+      <p style="color:var(--muted);font-size:13.5px;margin:10px 0 0">Reports and the top-bar filter use this list. Each safety-critical element belongs to one location; its inspections, overrides and actions follow it automatically.</p>
+      ${S.db.sce.length ? `<div class="set-grid" style="margin-top:14px">${assetAssignRows()}</div><p style="color:var(--muted);font-size:13px;margin:8px 0 0">Assign every element that shares an asset in one go. Elements with no location appear only in the combined report.</p>` : ''}
+    </div></div>
     <div class="panel"><div class="panel-h"><h3>Email notifications</h3></div><div class="panel-b">
       <label class="f"><span>Recipients</span><div class="chips-in">${s.recipients.map((r, i) => `<span class="chip blue">${esc(r)} <button data-a="rmrec" data-id="${i}" aria-label="Remove ${esc(r)}">×</button></span>`).join('')}<input type="email" data-in="addrec" placeholder="Type an email and press Enter" aria-label="Add recipient"></div></label>
       <div class="set-grid" style="margin-top:10px"><div>${sw('rules.overdueInspections', 'Overdue inspections', '', R.overdueInspections)}${sw('rules.failedTests', 'Failed tests', '', R.failedTests)}${sw('rules.expiredOverrides', 'Expired or unassessed overrides', '', R.expiredOverrides)}${sw('rules.overdueActions', 'Overdue actions', '', R.overdueActions)}${sw('rules.dueSoon', 'Coming-up list', '', R.dueSoon)}</div>
@@ -227,7 +287,7 @@
   /* ---------- drawer ---------- */
   function openDrawer(col, id, preset) {
     const found = id && S.db[col].find(r => r.id === id);
-    const rec = found ? clone(found) : Object.assign({ id: P.uid(), docs: [], _new: true }, DEFAULTS[col](), preset || {});
+    const rec = found ? clone(found) : Object.assign({ id: P.uid(), docs: [], _new: true }, DEFAULTS[col](), (col === 'sce' || col === 'kpi') && S.loc ? { site: S.loc } : {}, preset || {});
     rec.docs = rec.docs || [];
     S.drawer = { col, rec, added: [] };
     renderDrawer();
@@ -236,7 +296,12 @@
     const v = rec[f.k] == null ? '' : rec[f.k], c = f.full ? ' full' : '', d = `data-k="${f.k}"`; let i;
     switch (f.t) {
       case 'area': i = `<textarea ${d}>${esc(v)}</textarea>`; break;
-      case 'sel': { const o = f.opts.includes(v) || !v ? f.opts : f.opts.concat(v); i = `<select ${d}>${o.map(x => `<option value="${esc(x)}" ${x === v ? 'selected' : ''}>${esc((f.labels && f.labels[x]) || x)}</option>`).join('')}</select>`; break; }
+      case 'sel': {
+        let o = f.opts || [], lb = f.labels || {};
+        if (f.k === 'site') { o = [''].concat(locs()); lb = { '': 'Unassigned' }; }
+        o = o.includes(v) || !v ? o : o.concat(v);
+        i = `<select ${d}>${o.map(x => `<option value="${esc(x)}" ${x === v ? 'selected' : ''}>${esc(lb[x] || x || 'Unassigned')}</option>`).join('')}</select>`; break;
+      }
       case 'date': i = `<input type="date" ${d} value="${esc(v)}">`; break;
       case 'dt': i = `<input type="datetime-local" ${d} value="${esc(v)}">`; break;
       case 'month': i = `<input type="month" ${d} value="${esc(String(v).slice(0, 7))}">`; break;
@@ -268,7 +333,7 @@
     const dr = S.drawer; let layer = $('#layer'); if (!dr) { layer.innerHTML = ''; return; }
     const { col, rec } = dr, sc = SCHEMA[col];
     const title = rec._new ? 'New ' + sc.one.toLowerCase() : (col === 'kpi' ? fmtMonth(rec.month) : rec.tag || sc.one);
-    const sub = rec._new ? '' : col === 'sce' ? (rec.desc || '') : [rec.asset, col === 'insp' ? rec.type : ''].filter(Boolean).join(' · ');
+    const sub = rec._new ? '' : col === 'sce' ? [rec.site, rec.desc].filter(Boolean).join(' · ') : [siteOf(rec), rec.asset, col === 'insp' ? rec.type : ''].filter(Boolean).join(' · ');
     const logs = S.db.log.filter(l => l.rid === rec.id).slice(-6).reverse();
     layer.innerHTML = `<div class="scrim" data-a="closedrawer"></div><aside class="drawer" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="drawer-h"><div style="flex:1;min-width:0"><h2>${esc(title)}</h2><small>${esc(sub)}</small></div><button class="iconbtn" data-a="closedrawer" aria-label="Close">${ic('x')}</button></div>
     <div class="drawer-b"><datalist id="tags">${S.db.sce.map(s => `<option value="${esc(s.tag)}">${esc(s.desc || '')}</option>`).join('')}</datalist>
@@ -318,21 +383,24 @@
   const serial = s => { const d = P.parse(s); return d ? Math.round((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - Date.UTC(1899, 11, 30)) / 864e5) : ''; };
   const serialDT = s => { const d = P.parseDT(s); return d ? (Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes()) - Date.UTC(1899, 11, 30)) / 864e5 : ''; };
   async function exportXlsx() {
-    await APP.loadScript(XL); const X = window.XLSX, wb = X.utils.book_new(), D = S.db;
+    await APP.loadScript(XL); const X = window.XLSX, wb = X.utils.book_new();
+    const D = S.loc ? P.scopeDb(S.db, S.loc) : S.db, scope = S.loc || 'All locations';
     const add = (name, head, rows, widths, fix) => { const ws = X.utils.aoa_to_sheet([head, ...rows]); ws['!cols'] = widths.map(w => ({ wch: w })); if (fix) fix(ws); X.utils.book_append_sheet(wb, ws, name); };
     const setC = (ws, a, o) => { ws[a] = Object.assign(ws[a] || {}, o); };
     const sm = S.sm;
-    add('Health Summary', ['Measure', 'Value'], [['Report date', S.t], ['Health index', sm.index], ['Rating', sm.rating], ['Inspections on time %', sm.I.onTimePct], ['Overdue inspections', sm.I.overdue], ['Open overrides', sm.O.open], ['Open actions', sm.A.open], ['Overdue actions', sm.A.overdue], ['SCEs needing action', sm.B.red]], [30, 20]);
-    add('SCE Master Register', ['S/N', 'Asset', 'Location', 'SCE Tag No', 'SCE Description', 'Barrier Type (Preventive/Mitigative)', 'Performance Standard Ref', 'SIL Rating', 'Risk Ranking (H/M/L)', 'Responsible Owner', 'Regulatory Ref', 'Status (Active/Retired)'], D.sce.map((r, i) => [i + 1, r.asset, r.location, r.tag, r.desc, r.barrier, r.ps, r.sil, r.risk, r.owner, r.reg, r.status]), [6, 20, 20, 14, 36, 22, 18, 10, 14, 20, 18, 14]);
+    add('Health Summary', ['Measure', 'Value'], [['Report date', S.t], ['Location', scope], ['Health index', sm.index], ['Rating', sm.rating], ['Inspections on time %', sm.I.onTimePct], ['Overdue inspections', sm.I.overdue], ['Open overrides', sm.O.open], ['Open actions', sm.A.open], ['Overdue actions', sm.A.overdue], ['SCEs needing action', sm.B.red]], [30, 24]);
+    if (!S.loc) add('Locations', ['Location', 'Health index', 'Rating', 'SCEs', 'Need action', 'Tests overdue', 'Open overrides', 'Open actions'], sm.perSite.map(p => [p.site, p.empty ? '' : p.index, p.empty ? 'No data' : p.rating, p.empty ? 0 : p.sce, p.empty ? 0 : p.red, p.empty ? 0 : p.overdue, p.empty ? 0 : p.openOvr, p.empty ? 0 : p.openAct]), [26, 12, 12, 8, 12, 14, 14, 14]);
+    add('SCE Master Register', ['S/N', 'Asset', 'Area / Unit', 'SCE Tag No', 'SCE Description', 'Barrier Type (Preventive/Mitigative)', 'Performance Standard Ref', 'SIL Rating', 'Risk Ranking (H/M/L)', 'Responsible Owner', 'Regulatory Ref', 'Status (Active/Retired)', 'Location'], D.sce.map((r, i) => [i + 1, r.asset, r.location, r.tag, r.desc, r.barrier, r.ps, r.sil, r.risk, r.owner, r.reg, r.status, r.site || '']), [6, 20, 20, 14, 36, 22, 18, 10, 14, 20, 18, 14, 22]);
     add('SCE Inspection Tracking', ['S/N', 'Asset', 'SCE Tag No', 'Inspection/Test Type', 'Test Frequency (Days)', 'Last Test Date', 'Next Due Date (Auto)', 'Test Result (Pass/Fail/Conditional)', 'Verification Authority', 'Overdue (Auto)', 'Remarks'],
       D.insp.map((r, i) => { const n = iI(r); return [i + 1, r.asset, r.tag, r.type, +r.freq, serial(r.last), serial(n.next), r.result, r.auth, n.state === 'overdue' ? 'YES' : 'NO', r.remarks]; }), [6, 20, 14, 30, 12, 14, 16, 18, 24, 12, 30], ws => D.insp.forEach((r, i) => { const n = i + 2; setC(ws, 'F' + n, { t: 'n', z: 'dd-mmm-yyyy' }); setC(ws, 'G' + n, { t: 'n', z: 'dd-mmm-yyyy', f: `F${n}+E${n}` }); setC(ws, 'J' + n, { f: `IF(G${n}<TODAY(),"YES","NO")` }); }));
     add('Barrier Overrides', ['Asset', 'SCE Tag No', 'Type (Override/Bypass/Inhibit)', 'Start Date', 'End Date', 'Duration (Hours - Auto)', 'Risk Assessment Conducted (Yes/No)', 'Compensating Measure in Place', 'Approved By', 'Status (Open/Closed)'],
       D.ovr.map(r => [r.asset, r.tag, r.type, serialDT(r.start), serialDT(r.end), oI(r).hours, r.risk, r.comp, r.approver, r.status]), [20, 14, 18, 18, 18, 12, 14, 36, 20, 12], ws => D.ovr.forEach((r, i) => { const n = i + 2; setC(ws, 'D' + n, { t: 'n', z: 'dd-mmm-yyyy hh:mm' }); setC(ws, 'E' + n, { t: 'n', z: 'dd-mmm-yyyy hh:mm' }); setC(ws, 'F' + n, { f: `(E${n}-D${n})*24` }); }));
     add('Defects & Actions', ['Asset', 'SCE Tag No', 'Defect Description', 'Identified Date', 'Risk Level (H/M/L)', 'Temporary Control in Place', 'Corrective Action', 'Action Owner', 'Target Closure Date', 'Status (Open/Closed/Overdue)', 'Progress %', 'Owner Email', 'Documents'],
       D.act.map(r => [r.asset, r.tag, r.desc, serial(r.identified), r.risk, r.temp, r.corrective, r.owner, serial(r.target), aI(r).state === 'overdue' ? 'Overdue' : r.status === 'In Progress' ? 'Open' : r.status, +r.progress || 0, r.ownerEmail, (r.docs || []).map(d => d.name).join('; ')]), [20, 14, 36, 14, 12, 28, 32, 18, 14, 16, 10, 24, 30], ws => D.act.forEach((r, i) => { const n = i + 2; setC(ws, 'D' + n, { t: 'n', z: 'dd-mmm-yyyy' }); setC(ws, 'I' + n, { t: 'n', z: 'dd-mmm-yyyy' }); }));
-    add('PS KPI Dashboard', ['Month', 'Total SCE Population', 'Total Verified This Month', '% Verified (Auto)', 'Overdue Inspections', '% Overdue (Auto)', 'Top Event  ', 'LOPC Incidents', 'High Potential Near Misses', 'Active Overrides'],
-      kpiSorted().map(r => [serial(r.month), +r.pop, +r.verified, null, +r.overdue, null, r.topEvent, +r.lopc, +r.hipo, +r.overrides]), [12, 14, 14, 12, 12, 12, 30, 10, 14, 14], ws => kpiSorted().forEach((r, i) => { const n = i + 2; setC(ws, 'A' + n, { t: 'n', z: 'mmm-yyyy' }); setC(ws, 'D' + n, { t: 'n', z: '0%', f: `IF(B${n}=0,0,C${n}/B${n})` }); setC(ws, 'F' + n, { t: 'n', z: '0%', f: `IF(B${n}=0,0,E${n}/B${n})` }); }));
-    X.writeFile(wb, (S.settings.project || 'Process Safety Tracker').replace(/[^\w]+/g, '_') + '_' + S.t + '.xlsx', { cellDates: false });
+    add('PS KPI Dashboard', ['Month', 'Total SCE Population', 'Total Verified This Month', '% Verified (Auto)', 'Overdue Inspections', '% Overdue (Auto)', 'Top Event  ', 'LOPC Incidents', 'High Potential Near Misses', 'Active Overrides', 'Location'],
+      kpiSorted().map(r => [serial(r.month), +r.pop, +r.verified, null, +r.overdue, null, r.topEvent, +r.lopc, +r.hipo, +r.overrides, r.site || scope]), [12, 14, 14, 12, 12, 12, 30, 10, 14, 14, 22], ws => kpiSorted().forEach((r, i) => { const n = i + 2; setC(ws, 'A' + n, { t: 'n', z: 'mmm-yyyy' }); setC(ws, 'D' + n, { t: 'n', z: '0%', f: `IF(B${n}=0,0,C${n}/B${n})` }); setC(ws, 'F' + n, { t: 'n', z: '0%', f: `IF(B${n}=0,0,E${n}/B${n})` }); }));
+    const slug = x => String(x || '').replace(/[^\w]+/g, '_').replace(/^_+|_+$/g, '');
+    X.writeFile(wb, slug(S.settings.project || 'Process_Safety_Tracker') + '_' + slug(scope) + '_' + S.t + '.xlsx', { cellDates: false });
   }
   const toISO = v => { if (v == null || v === '') return ''; if (v instanceof Date) return P.iso(new Date(v.getTime() + 12 * 36e5)).slice(0, 10) ; if (typeof v === 'number') return new Date(Math.round((v - 25569) * 864e5)).toISOString().slice(0, 10); const s = String(v).trim(); const m = /^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/.exec(s); if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; const d = new Date(s); return isNaN(d) ? '' : P.iso(d); };
   const toDT = v => { if (v == null || v === '') return ''; if (typeof v === 'number') { const d = new Date(Math.round((v - 25569) * 864e5)); return d.toISOString().slice(0, 16); } if (v instanceof Date) return new Date(v.getTime() + 12 * 36e5).toISOString().slice(0, 16); const d = new Date(v); return isNaN(d) ? '' : d.toISOString().slice(0, 16); };
@@ -345,11 +413,11 @@
       const s = v => v == null ? '' : String(v).trim(), n = v => v === '' || v == null ? '' : +v, id = () => P.uid();
       const yn = v => /^y/i.test(s(v)) ? 'Yes' : 'No';
       db = { log: [] };
-      db.sce = sh('SCE Master Register').map(r => ({ id: id(), asset: s(r[1]), location: s(r[2]), tag: s(r[3]), desc: s(r[4]), barrier: /mit/i.test(s(r[5])) ? 'Mitigative' : 'Preventive', ps: s(r[6]), sil: s(r[7]) || 'N/A', risk: s(r[8]).toUpperCase().slice(0, 1) || 'M', owner: s(r[9]), reg: s(r[10]), status: /ret/i.test(s(r[11])) ? 'Retired' : 'Active', docs: [] }));
+      db.sce = sh('SCE Master Register').map(r => ({ id: id(), asset: s(r[1]), site: s(r[12]), location: s(r[2]), tag: s(r[3]), desc: s(r[4]), barrier: /mit/i.test(s(r[5])) ? 'Mitigative' : 'Preventive', ps: s(r[6]), sil: s(r[7]) || 'N/A', risk: s(r[8]).toUpperCase().slice(0, 1) || 'M', owner: s(r[9]), reg: s(r[10]), status: /ret/i.test(s(r[11])) ? 'Retired' : 'Active', docs: [] }));
       db.insp = sh('SCE Inspection Tracking').map(r => ({ id: id(), asset: s(r[1]), tag: s(r[2]), type: s(r[3]), freq: n(r[4]) || 90, last: toISO(r[5]), result: ['Pass', 'Fail', 'Conditional'].find(x => x.toLowerCase() === s(r[7]).toLowerCase()) || '', auth: s(r[8]), remarks: s(r[10]), docs: [] }));
       db.ovr = sh('Barrier Overrides').map(r => ({ id: id(), asset: s(r[0]), tag: s(r[1]), type: s(r[2]) || 'Override', start: toDT(r[3]), end: toDT(r[4]), risk: yn(r[6]), comp: s(r[7]), approver: s(r[8]), status: /clos/i.test(s(r[9])) ? 'Closed' : 'Open', docs: [] }));
       db.act = sh('Defects & Actions').map(r => ({ id: id(), asset: s(r[0]), tag: s(r[1]), desc: s(r[2]), identified: toISO(r[3]), risk: s(r[4]).toUpperCase().slice(0, 1) || 'M', temp: s(r[5]), corrective: s(r[6]), owner: s(r[7]), target: toISO(r[8]), status: /clos/i.test(s(r[9])) ? 'Closed' : 'Open', progress: n(r[10]) || 0, ownerEmail: s(r[11]), docs: [] }));
-      db.kpi = sh('PS KPI Dashboard').map(r => ({ id: id(), month: toISO(r[0]), pop: n(r[1]), verified: n(r[2]), overdue: n(r[4]), topEvent: s(r[6]), lopc: n(r[7]), hipo: n(r[8]), overrides: n(r[9]), docs: [] }));
+      db.kpi = sh('PS KPI Dashboard').map(r => ({ id: id(), month: toISO(r[0]), site: s(r[10]), pop: n(r[1]), verified: n(r[2]), overdue: n(r[4]), topEvent: s(r[6]), lopc: n(r[7]), hipo: n(r[8]), overrides: n(r[9]), docs: [] }));
     }
     const cnt = ['sce', 'insp', 'ovr', 'act', 'kpi'].map(c => `${(db[c] || []).length} ${SCHEMA[c].name.toLowerCase()}`).join(', ');
     if (!(await confirmDlg('Replace current data?', `Found ${cnt}. This replaces everything in the tracker. Attached documents on existing records will be detached.`, 'Replace data', true))) return;
@@ -363,9 +431,9 @@
     if (!r.ok) throw new Error('EmailJS refused the message (' + r.status + '): ' + (await r.text()).slice(0, 120));
   }
   async function sendDigest(test) {
-    const link = location.href.split('#')[0], d = P.buildDigest(S.db, S.settings, S.t, { link }), rec = S.settings.recipients;
+    const link = location.href.split('#')[0], d = P.buildDigest(S.db, S.settings, S.t, { link, site: S.loc }), rec = S.settings.recipients;
     try {
-      if (S.mode === 'server') { const j = await APP.req('POST', '/email/' + (test ? 'test' : 'digest'), { link }); return toast(j.message || 'Sent'); }
+      if (S.mode === 'server') { const j = await APP.req('POST', '/email/' + (test ? 'test' : 'digest'), { link, site: S.loc }); return toast(j.message || 'Sent'); }
       if (!rec.length && !S.settings.webhook) return toast('Add at least one recipient in Settings first.', true);
       const ej = S.settings.emailjs, subj = test ? '[Test] ' + d.subject : d.subject, body = test ? 'This is a test message from your Process Safety Tracker. Notifications are working.' : d.text;
       if (rec.length) { if (ej.serviceId && ej.templateId && ej.publicKey) { for (const to of rec) await emailJS(to, subj, body, test ? '<p>' + esc(body) + '</p>' : d.html); toast('Sent to ' + rec.length + ' recipient' + (rec.length > 1 ? 's' : '')); }
@@ -374,34 +442,36 @@
     } catch (e) { if (e.auth) return showLogin(); toast(e.message || 'Could not send', true); }
   }
   function previewDigest() {
-    const d = P.buildDigest(S.db, S.settings, S.t, { link: location.href.split('#')[0] });
+    const d = P.buildDigest(S.db, S.settings, S.t, { link: location.href.split('#')[0], site: S.loc });
     dialog(`<h3>Email preview</h3><p style="margin-bottom:8px"><b>Subject:</b> ${esc(d.subject)}</p><div class="preview">${d.html}</div><div class="acts" style="margin-top:14px"><button class="btn primary" data-r="1">Close</button></div>`, (dl, close) => dl.querySelector('[data-r]').onclick = () => close());
     document.querySelector('.dlg-b').style.maxWidth = '700px';
   }
 
   /* ---------- shell ---------- */
-  const NAV = [['dashboard', 'Dashboard', 'dash'], ['alerts', 'Alerts', 'bell'], ['timeline', 'Timeline', 'time'], ['sep'], ['sce', 'SCE register', 'shield'], ['insp', 'Inspections', 'check'], ['ovr', 'Overrides', 'unlock'], ['act', 'Actions', 'flag'], ['kpi', 'KPIs', 'chart'], ['sep'], ['docs', 'Documents', 'folder'], ['summary', 'Summary sheet', 'doc'], ['settings', 'Settings', 'gear']];
-  const TITLES = { dashboard: 'Dashboard', alerts: 'Alerts', timeline: 'Timeline', sce: 'SCE register', insp: 'Inspections', ovr: 'Overrides', act: 'Actions', kpi: 'KPIs', docs: 'Documents', summary: 'Summary sheet', settings: 'Settings' };
+  const NAV = [['dashboard', 'Dashboard', 'dash'], ['alerts', 'Alerts', 'bell'], ['timeline', 'Timeline', 'time'], ['sep'], ['sce', 'SCE register', 'shield'], ['insp', 'Inspections', 'check'], ['ovr', 'Overrides', 'unlock'], ['act', 'Actions', 'flag'], ['kpi', 'KPIs', 'chart'], ['sep'], ['docs', 'Documents', 'folder'], ['summary', 'Reports', 'doc'], ['settings', 'Settings', 'gear']];
+  const TITLES = { dashboard: 'Dashboard', alerts: 'Alerts', timeline: 'Timeline', sce: 'SCE register', insp: 'Inspections', ovr: 'Overrides', act: 'Actions', kpi: 'KPIs', docs: 'Documents', summary: 'Reports', settings: 'Settings' };
   function chrome() {
     const sm = S.sm, s = S.settings, n = sm.attention.length;
-    return `<aside class="side" id="side"><div class="brand-lockup"><img src="${esc(s.logo || 'brand/oml11-logo.png')}" alt="NNPC E&amp;P Limited and WAGL OML 11 Limited"></div><div class="brand"><div><b>${esc(s.project)}</b><small>${esc(s.client ? 'for ' + s.client : s.location)}</small></div></div>
+    return `<aside class="side" id="side"><div class="brand-lockup"><img src="${esc(s.logo || 'brand/oml11-logo.png')}" alt="NNPC E&amp;P Limited and WAGL OML 11 Limited"></div><div class="brand"><div><b>${esc(s.project)}</b><small>${esc(S.loc || (s.client ? 'for ' + s.client : s.location))}</small></div></div>
     <nav class="nav" aria-label="Main">${NAV.map(i => i[0] === 'sep' ? '<div class="sep"></div>' : `<button data-a="nav" data-id="${i[0]}" ${S.view === i[0] ? 'aria-current="page"' : ''}>${ic(i[2])}${i[1]}${i[0] === 'alerts' && n ? `<span class="count">${n}</span>` : ''}</button>`).join('')}</nav>
     <div class="side-foot"><b>${esc(S.user || 'Guest')}</b><br>${S.mode === 'server' ? 'Shared workspace' : 'Saved in this browser'}</div></aside>`;
   }
   function topbar() {
     const sm = S.sm, { I, A, O } = sm, n = sm.attention.length;
     return `<header class="top"><button class="iconbtn menu-btn" data-a="menu" aria-label="Open menu">${ic('menu')}</button><h1>${TITLES[S.view]}</h1>
+    <label class="locsel"><span>Location</span><select data-in="loc" aria-label="Filter by location"><option value="">All locations</option>${locs().map(l => `<option ${l === S.loc ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
     <div class="meters" aria-label="Status bar"><div class="meter"><div class="row"><span>Inspections on time</span><b>${I.onTimePct}%</b></div>${segBar(I.ok, I.soon, I.overdue)}</div><div class="meter"><div class="row"><span>Actions closed</span><b>${A.closedPct}%</b></div>${segBar(A.closed, A.open - A.overdue, A.overdue)}</div><div class="meter"><div class="row"><span>Overrides controlled</span><b>${O.controlledPct}%</b></div>${segBar(O.controlled, 0, O.open - O.controlled)}</div><div class="meter" style="min-width:90px"><div class="row"><span>Health index</span><b>${sm.empty ? '–' : sm.index}</b></div><div class="bar"><i class="${sm.index >= 75 ? 'g' : sm.index >= 60 ? 'a' : 'r'}" style="width:${sm.index}%"></i></div></div></div>
     <div class="top-actions"><button class="iconbtn" data-a="nav" data-id="alerts" aria-label="${n} alerts">${ic('bell')}${n ? `<span class="dot">${n}</span>` : ''}</button><button class="iconbtn" data-a="theme" aria-label="Switch colour theme">${ic(document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon')}</button></div></header>`;
   }
   const VIEWS = { dashboard, alerts: alertsView, timeline, docs: docsView, summary: summaryView, settings: settingsView, sce: () => listView('sce'), insp: () => listView('insp'), ovr: () => listView('ovr'), act: () => listView('act'), kpi: () => listView('kpi') };
   function render() {
-    S.t = P.todayISO(S.settings.timezone); S.sm = P.summarize(S.db, S.settings, S.t);
+    if (S.loc && !locs().includes(S.loc)) { S.loc = ''; APP.lsSet('ps_loc', ''); }
+    S.t = P.todayISO(S.settings.timezone); S._smap = P.siteMap(S.db); S.sm = P.summarize(S.db, S.settings, S.t, { site: S.loc });
     const demo = S.settings.demo ? `<div class="demo-banner"><b>Demo data</b> Sample records are loaded so you can explore. Clear them when you are ready to enter real data.<button class="btn sm" data-a="clear">Clear demo data</button></div>` : '';
     $('#root').innerHTML = `<div id="app">${chrome()}<div class="main">${topbar()}<main class="content" id="content">${demo}${VIEWS[S.view]()}</main></div></div><div id="layer"></div>`;
     if (S.drawer) renderDrawer(); document.title = (S.settings.project || 'Process Safety Tracker') + ' · ' + TITLES[S.view];
   }
-  function renderChrome() { S.sm = P.summarize(S.db, S.settings, S.t); $('.side') && ($('.side').outerHTML = chrome()); $('.top') && ($('.top').outerHTML = topbar()); }
+  function renderChrome() { S._smap = P.siteMap(S.db); S.sm = P.summarize(S.db, S.settings, S.t, { site: S.loc }); $('.side') && ($('.side').outerHTML = chrome()); $('.top') && ($('.top').outerHTML = topbar()); }
   function go(v) { S.view = v; if (location.hash !== '#/' + v) history.replaceState(null, '', '#/' + v); S.drawer = null; render(); window.scrollTo(0, 0); }
 
   /* ---------- actions ---------- */
@@ -426,9 +496,14 @@
     print: () => window.print(), xlsx: () => exportXlsx().catch(e => toast(e.message, true)),
     json: () => APP.download('tracker-backup-' + S.t + '.json', new Blob([JSON.stringify({ db: S.db, settings: S.settings }, null, 1)], { type: 'application/json' })),
     senddigest: () => sendDigest(false), sendtest: () => sendDigest(true), preview: previewDigest,
-    kpisync: async () => { const m = thisMonth(), sm = S.sm; let r = S.db.kpi.find(k => k.month === m); const verified = S.db.insp.filter(i => (i.last || '').slice(0, 7) === m.slice(0, 7)).length;
-      r = Object.assign(r || { id: P.uid(), month: m, lopc: 0, hipo: 0, topEvent: '', docs: [] }, { pop: sm.B.total, verified, overdue: sm.I.overdue, overrides: sm.O.open }); await APP.upsert('kpi', r); await APP.logEvent('synced', 'kpi', r, fmtMonth(m)); render(); toast('Filled ' + fmtMonth(m) + ' from live data'); },
+    kpisync: async () => { const m = thisMonth(), sm = S.sm, site = S.loc || '';
+      let r = S.db.kpi.find(k => k.month === m && (k.site || '') === site);
+      const verified = S.db.insp.filter(i => (i.last || '').slice(0, 7) === m.slice(0, 7) && (!site || siteOf(i) === site)).length;
+      r = Object.assign(r || { id: P.uid(), month: m, site, lopc: 0, hipo: 0, topEvent: '', docs: [] }, { pop: sm.B.total, verified, overdue: sm.I.overdue, overrides: sm.O.open }); await APP.upsert('kpi', r); await APP.logEvent('synced', 'kpi', r, fmtMonth(m) + (site ? ' · ' + site : '')); render(); toast('Filled ' + fmtMonth(m) + (site ? ' for ' + site : '') + ' from live data'); },
     rmrec: el => { S.settings.recipients.splice(+el.dataset.id, 1); APP.saveSettings(); render(); },
+    rmloc: async el => { const i = +el.dataset.id, name = S.settings.locations[i]; if (!(await confirmDlg('Remove this location?', `${name} will be removed from the location list. Records already assigned to it keep the name but stop appearing in location reports until you add it back.`, 'Remove location', true))) return; S.settings.locations.splice(i, 1); await APP.saveSettings(); if (S.loc === name) { S.loc = ''; APP.lsSet('ps_loc', ''); } render(); toast('Location removed'); },
+    setloc: el => { S.loc = el.dataset.id; S.asset = ''; APP.lsSet('ps_loc', S.loc); render(); window.scrollTo({ top: 0, behavior: 'smooth' }); },
+    pack: () => { S.pack = !S.pack; render(); },
     rmlogo: () => { S.settings.logo = ''; APP.saveSettings(); render(); },
     demo: async () => { if (!(await confirmDlg('Load demo data?', 'This replaces everything in the tracker with sample records.', 'Load demo data', true))) return; await APP.replaceAll(P.seed(S.t)); S.settings.demo = true; await APP.saveSettings(); render(); toast('Demo data loaded'); },
     clear: async () => { if (!(await confirmDlg('Clear all data?', 'Every record and activity entry is removed. Export a backup first if you might need it.', 'Clear everything', true))) return; await APP.replaceAll({ sce: [], insp: [], ovr: [], act: [], kpi: [], log: [] }); S.settings.demo = false; await APP.saveSettings(); render(); toast('Tracker is empty'); }
@@ -438,8 +513,14 @@
     if (e.key === 'Escape' && S.drawer && !document.querySelector('.dlg')) closeDrawer(true);
     if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.drop')) { e.preventDefault(); $('#filepick').click(); }
     if (e.key === 'Enter' && e.target.dataset && e.target.dataset.in === 'addrec') { e.preventDefault(); addRecipient(e.target); }
+    if (e.key === 'Enter' && e.target.dataset && e.target.dataset.in === 'addloc') { e.preventDefault(); addLocation(e.target); }
   });
   function addRecipient(el) { const v = el.value.trim().replace(/,$/, ''); if (!v) return; if (!/^\S+@\S+\.\S+$/.test(v)) return toast('That does not look like an email address.', true); if (!S.settings.recipients.includes(v)) S.settings.recipients.push(v); APP.saveSettings(); render(); }
+  function addLocation(el) {
+    const v = el.value.trim(); if (!v) return;
+    if (S.settings.locations.some(l => l.toLowerCase() === v.toLowerCase())) return toast('That location is already in the list.', true);
+    S.settings.locations.push(v); APP.saveSettings(); render(); toast('Added ' + v);
+  }
   document.addEventListener('input', e => {
     const el = e.target;
     if (el.dataset.in === 'q') { S.q[el.dataset.col] = el.value; const t = $('#tbl'); if (t) t.innerHTML = el.dataset.col === 'docs' ? docsTable(allDocs().filter(x => (x.d.name + ' ' + label(x.col, x.r)).toLowerCase().includes(el.value.toLowerCase()))) : tableHtml(el.dataset.col); }
@@ -454,8 +535,18 @@
   document.addEventListener('change', async e => {
     const el = e.target;
     if (el.dataset.in === 'asset') { S.asset = el.value; render(); }
+    else if (el.dataset.in === 'loc') { S.loc = el.value; S.asset = ''; APP.lsSet('ps_loc', S.loc); render(); }
     else if (el.dataset.set) { const p = el.dataset.set; let v = el.type === 'checkbox' ? el.checked : el.type === 'number' ? +el.value : el.value.trim(); setPath(S.settings, p, v); saveSoon(); if (['project', 'client', 'location', 'timezone', 'soonDays', 'rules.overrideMaxHours'].includes(p)) renderChrome(); }
     else if (el.dataset.in === 'addrec') addRecipient(el);
+    else if (el.dataset.in === 'assign') {
+      const asset = el.dataset.asset, val = el.value;
+      (async () => {
+        const list = S.db.sce.filter(x => (x.asset || '') === asset);
+        for (const r of list) { r.site = val; await APP.upsert('sce', r); }
+        await APP.logEvent('assigned a location to', 'sce', null, asset + ' → ' + (val || 'Unassigned'));
+        render(); toast(list.length + ' element' + (list.length === 1 ? '' : 's') + ' assigned to ' + (val || 'Unassigned'));
+      })().catch(e => toast(e.message || 'Could not assign', true));
+    }
     else if (el.id === 'filepick') { const f = [...el.files]; el.value = ''; addFiles(f); }
     else if (el.dataset.a === 'logo' && el.files[0]) { const f = el.files[0]; if (f.size > 400000) return toast('Logo must be under 400 KB.', true); const r = new FileReader(); r.onload = () => { S.settings.logo = r.result; APP.saveSettings(); render(); }; r.readAsDataURL(f); }
     else if (el.dataset.a === 'import' && el.files[0]) { const f = el.files[0]; el.value = ''; try { await importFile(f); } catch (err) { toast(err.message || 'Import failed', true); } }
@@ -470,12 +561,22 @@
     $('#lf').onsubmit = async e => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)); S.user = f.name.trim(); APP.lsSet('ps_user', S.user);
       try { const j = await APP.req('POST', '/login', { password: f.pw }); APP.setToken(j.token); boot(true); } catch (err) { showLogin('That password is not right.'); } };
   }
+  /* Demo data imported before locations existed gets its site filled in once. */
+  async function migrateDemoSites() {
+    if (!S.settings.demo || S.settings.sitesMigrated) return;
+    const map = { 'Flowstation FS-1': 'Imo River', 'Gas Plant GP-2': 'Okoloma Gas Plant', 'Wellpad WP-3': 'Bonny', 'Flowstation KI-1': 'Kidney Island', 'Flowstation IS-1': 'Isimiri', 'Rig ODL-1': 'Okoloma Drilling Site', 'Rig IRS-1': 'Imo River Drilling Sites', 'Rig 4': 'Rigs' };
+    let n = 0;
+    for (const s of S.db.sce) if (!s.site && map[s.asset]) { s.site = map[s.asset]; await APP.upsert('sce', s); n++; }
+    S.settings.sitesMigrated = true; await APP.saveSettings();
+    if (n) toast(n + ' demo elements assigned to their locations');
+  }
   async function boot(skipDetect) {
     const th = APP.lsGet('ps_theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); document.documentElement.dataset.theme = th;
     try {
       if (!skipDetect) await APP.detect();
       if (S.mode === 'server' && S.info.auth && !APP.getToken()) return showLogin();
       await APP.load();
+      await migrateDemoSites();
     } catch (e) { if (e.auth) return showLogin(); $('#root').innerHTML = `<div class="login"><div class="dlg-b"><h3>Could not start</h3><p>${esc(e.message || e)}</p></div></div>`; return; }
     const v = location.hash.replace('#/', ''); if (TITLES[v]) S.view = v;
     render();

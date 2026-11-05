@@ -202,14 +202,14 @@
     if (site) db = scopeDb(full, site);
     const act = activeTags(db), map = siteMap(db);
     const inspAll = (db.insp || []).filter(r => !r.tag || act.has(r.tag) || !(db.sce || []).some(s => s.tag === r.tag));
-    const I = { total: inspAll.length, overdue: 0, soon: 0, ok: 0, none: 0, fail: 0, cond: 0 };
+    const I = { total: inspAll.length, overdue: 0, soon: 0, ok: 0, none: 0, fail: 0, cond: 0, measured: 0 };
     const attention = [], upcoming = [];
-    inspAll.forEach(r => { const i = inspInfo(r, t, soon); I[i.state]++; if (r.result === 'Fail') I.fail++; if (r.result === 'Conditional') I.cond++;
+    inspAll.forEach(r => { const i = inspInfo(r, t, soon); I[i.state]++; if (i.state !== 'none') I.measured++; if (r.result === 'Fail') I.fail++; if (r.result === 'Conditional') I.cond++;
       if (i.state === 'overdue') attention.push({ type: 'insp', id: r.id, sev: 3, days: i.days, title: `${r.tag || ''} · ${r.type || 'Inspection'}`, sub: `Overdue by ${-i.days} days (was due ${fmtDate(i.next)})`, asset: r.asset, site: siteOf(r, map) });
       if (i.state === 'soon' || (i.state === 'ok' && i.days <= 60)) upcoming.push({ type: 'insp', id: r.id, days: i.days, date: i.next, title: `${r.tag || ''} · ${r.type || 'Inspection'}`, asset: r.asset, site: siteOf(r, map) });
       if (r.result === 'Fail') attention.push({ type: 'insp', id: r.id, sev: 4, days: 0, title: `${r.tag || ''} · ${r.type || 'Test'} FAILED`, sub: 'Last test result is Fail — raise a defect and put compensating measures in place', asset: r.asset, site: siteOf(r, map) });
     });
-    I.onTimePct = I.total ? Math.round(((I.total - I.overdue) / I.total) * 100) : 100;
+    I.onTimePct = I.measured ? Math.round(((I.measured - I.overdue) / I.measured) * 100) : null;
 
     const O = { total: (db.ovr || []).length, open: 0, expired: 0, norisk: 0, long: 0, hours: 0, controlled: 0 };
     (db.ovr || []).forEach(o => { const i = ovrInfo(o, t, maxH); if (i.state === 'closed') return; O.open++; O.hours += i.hours || 0;
@@ -217,7 +217,7 @@
       else if (i.state === 'norisk') { O.norisk++; attention.push({ type: 'ovr', id: o.id, sev: 4, days: 0, title: `${o.tag || ''} · ${o.type || 'Override'} has no risk assessment`, sub: 'An override without a risk assessment is a compliance gap', asset: o.asset, site: siteOf(o, map) }); }
       else { O.controlled++; if (i.state === 'long') { O.long++; attention.push({ type: 'ovr', id: o.id, sev: 2, days: 0, title: `${o.tag || ''} · ${o.type || 'Override'} running long`, sub: `${i.hours} h exceeds the ${maxH} h limit`, asset: o.asset, site: siteOf(o, map) }); } }
     });
-    O.controlledPct = O.open ? Math.round((O.controlled / O.open) * 100) : 100;
+    O.controlledPct = O.open ? Math.round((O.controlled / O.open) * 100) : null;
 
     const A = { total: (db.act || []).length, open: 0, overdue: 0, closed: 0, high: 0, progress: 0 };
     (db.act || []).forEach(a => { const i = actInfo(a, t);
@@ -226,28 +226,40 @@
       if (i.state === 'overdue') { A.overdue++; attention.push({ type: 'act', id: a.id, sev: a.risk === 'H' ? 3.5 : 2.5, days: i.days, title: `${a.tag || ''} · ${short(a.corrective || a.desc, 60)}`, sub: `Overdue by ${-i.days} days · owner ${a.owner || 'unassigned'}`, asset: a.asset, site: siteOf(a, map) }); }
       else if (i.days != null && i.days <= 14) upcoming.push({ type: 'act', id: a.id, days: i.days, date: a.target, title: `${a.tag || ''} · ${short(a.corrective || a.desc, 60)}`, asset: a.asset, site: siteOf(a, map) });
     });
-    A.closedPct = A.total ? Math.round((A.closed / A.total) * 100) : 100;
-    A.onTimePct = A.open ? Math.round(((A.open - A.overdue) / A.open) * 100) : 100;
+    A.closedPct = A.total ? Math.round((A.closed / A.total) * 100) : null;
+    A.onTimePct = A.open ? Math.round(((A.open - A.overdue) / A.open) * 100) : null;
 
     const states = sceStates(db, t, soon, maxH);
     const B = { green: 0, amber: 0, red: 0, grey: 0, total: 0, preventive: 0, mitigative: 0, high: 0 };
     (db.sce || []).forEach(s => { if (s.status === 'Retired') return; B.total++; B[states[s.id].level]++; if (s.barrier === 'Preventive') B.preventive++; if (s.barrier === 'Mitigative') B.mitigative++; if (s.risk === 'H') B.high++; });
 
-    const failPen = I.total ? ((I.fail + I.cond * 0.5) / I.total) : 0;
-    const index = Math.max(0, Math.min(100, Math.round(I.onTimePct * 0.40 + A.onTimePct * 0.25 + O.controlledPct * 0.20 + (1 - failPen) * 100 * 0.15)));
-    const rating = index >= 90 ? 'Strong' : index >= 75 ? 'Stable' : index >= 60 ? 'Watch' : 'Critical';
+    /* Health index: weight redistributes over the components that actually have data,
+       so an empty tracker never scores itself 100. No data at all = not assured. */
+    const failPen = I.measured ? ((I.fail + I.cond * 0.5) / I.measured) : 0;
+    const parts = [];
+    if (I.measured > 0) parts.push([I.onTimePct, 0.40]);
+    if (A.open > 0) parts.push([A.onTimePct, 0.25]);
+    if (O.open > 0) parts.push([O.controlledPct, 0.20]);
+    if (I.measured > 0) parts.push([(1 - failPen) * 100, 0.15]);
+    let index = null, rating = 'Not assured';
+    if (parts.length) {
+      const wsum = parts.reduce((a, p) => a + p[1], 0);
+      index = Math.max(0, Math.min(100, Math.round(parts.reduce((a, p) => a + p[0] * p[1], 0) / wsum)));
+      rating = index >= 90 ? 'Strong' : index >= 75 ? 'Stable' : index >= 60 ? 'Watch' : 'Critical';
+    }
 
     const perAsset = {};
-    const slot = n => perAsset[n || '—'] || (perAsset[n || '—'] = { asset: n || '—', sce: 0, red: 0, amber: 0, overdue: 0, openOvr: 0, openAct: 0 });
+    const slot = n => perAsset[n || '—'] || (perAsset[n || '—'] = { asset: n || '—', sce: 0, red: 0, amber: 0, overdue: 0, openOvr: 0, openAct: 0, linked: 0 });
     (db.sce || []).forEach(s => { if (s.status === 'Retired') return; const p = slot(s.asset); p.sce++; const l = states[s.id].level; if (l === 'red') p.red++; if (l === 'amber') p.amber++; });
-    inspAll.forEach(r => { if (inspInfo(r, t, soon).state === 'overdue') slot(r.asset).overdue++; });
-    (db.ovr || []).forEach(o => { if (o.status !== 'Closed') slot(o.asset).openOvr++; });
-    (db.act || []).forEach(a => { if (a.status !== 'Closed') slot(a.asset).openAct++; });
-    Object.values(perAsset).forEach(p => { p.health = p.sce ? Math.round(((p.sce - p.red - p.amber * 0.4) / p.sce) * 100) : 100; });
+    inspAll.forEach(r => { const p = slot(r.asset); p.linked++; if (inspInfo(r, t, soon).state === 'overdue') p.overdue++; });
+    (db.ovr || []).forEach(o => { const p = slot(o.asset); p.linked++; if (o.status !== 'Closed') p.openOvr++; });
+    (db.act || []).forEach(a => { const p = slot(a.asset); p.linked++; if (a.status !== 'Closed') p.openAct++; });
+    Object.values(perAsset).forEach(p => { p.health = (p.sce && p.linked) ? Math.round(((p.sce - p.red - p.amber * 0.4) / p.sce) * 100) : null; });
 
     attention.sort((a, b) => b.sev - a.sev || (a.days || 0) - (b.days || 0));
     upcoming.sort((a, b) => a.days - b.days);
-    const empty = !((db.sce||[]).length + (db.insp||[]).length + (db.ovr||[]).length + (db.act||[]).length);
+    /* "empty" = no assurance evidence logged yet (registers may hold SCEs but nothing measured) */
+    const empty = (I.total + A.total + O.total) === 0;
 
     /* one roll-up row per configured location, for the combined report */
     const perSite = [];
@@ -277,9 +289,10 @@
     const soonItems = R.dueSoon !== false && !opts.ownerEmail ? sm.upcoming.filter(u => u.days >= 0 && u.days <= (+S.soonDays || 30)).slice(0, 15) : [];
     const name = S.project || 'Process Safety Tracker';
     const where = opts.site ? ' · ' + opts.site : '';
-    const subject = `[${name}${where}] ${items.length ? items.length + ' item' + (items.length > 1 ? 's' : '') + ' need attention' : 'All clear'} · Health index ${sm.index} (${sm.rating})`;
-    const lines = [`${name}${S.client ? ' — ' + S.client : ''}`, `Report date: ${fmtDate(t)}`, `Location: ${opts.site || 'All locations'}`, '', `Process safety health index: ${sm.index}/100 (${sm.rating})`,
-      `Inspections on time: ${sm.I.onTimePct}%  |  Overdue: ${sm.I.overdue}  |  Due soon: ${sm.I.soon}`,
+    const nIdx = sm.index == null ? '—' : sm.index;
+    const subject = `[${name}${where}] ${items.length ? items.length + ' item' + (items.length > 1 ? 's' : '') + ' need attention' : 'All clear'} · Health index ${nIdx} (${sm.rating})`;
+    const lines = [`${name}${S.client ? ' — ' + S.client : ''}`, `Report date: ${fmtDate(t)}`, `Location: ${opts.site || 'All locations'}`, '', `Process safety health index: ${sm.index == null ? 'not measurable — no assurance data yet' : sm.index + '/100 (' + sm.rating + ')'}`,
+      `Inspections on time: ${sm.I.onTimePct == null ? 'not measured (no tests logged)' : sm.I.onTimePct + '%'}  |  Overdue: ${sm.I.overdue}  |  Due soon: ${sm.I.soon}`,
       `Open overrides: ${sm.O.open}  |  Open actions: ${sm.A.open}  |  Overdue actions: ${sm.A.overdue}`, ''];
     if (items.length) { lines.push('NEEDS ATTENTION'); items.slice(0, 40).forEach(x => lines.push(`• ${x.title} — ${x.sub}`)); lines.push(''); }
     if (soonItems.length) { lines.push('COMING UP'); soonItems.forEach(x => lines.push(`• ${fmtDate(x.date)} (${x.days === 0 ? 'today' : 'in ' + x.days + ' d'}): ${x.title}`)); lines.push(''); }
@@ -288,7 +301,7 @@
     const html = `<div style="font-family:Segoe UI,Arial,sans-serif;max-width:640px;margin:auto;color:#0d2530">
 <div style="background:#0d2530;color:#fff;padding:20px 24px;border-radius:10px 10px 0 0"><div style="font-size:12px;opacity:.7">${esc([S.client, opts.site].filter(Boolean).join(' · '))}</div><div style="font-size:20px;font-weight:700">${esc(name)}</div><div style="opacity:.75;font-size:13px">${fmtDate(t)}${opts.site ? ' · ' + esc(opts.site) : ''}</div></div>
 <div style="border:1px solid #e3e8ec;border-top:0;padding:20px 24px;border-radius:0 0 10px 10px">
-<table width="100%" cellspacing="0"><tr>${stat(sm.index, 'Health index · ' + sm.rating, sm.index >= 75 ? '#1f9d6b' : sm.index >= 60 ? '#c98200' : '#d6382f')}${stat(sm.I.overdue, 'Overdue inspections', sm.I.overdue ? '#d6382f' : '#1f9d6b')}${stat(sm.O.open, 'Open overrides')}${stat(sm.A.overdue, 'Overdue actions', sm.A.overdue ? '#d6382f' : '#1f9d6b')}</tr></table>
+<table width="100%" cellspacing="0"><tr>${stat(sm.index == null ? '—' : sm.index, 'Health index · ' + sm.rating, sm.index == null ? '#5b6b75' : sm.index >= 75 ? '#1f9d6b' : sm.index >= 60 ? '#c98200' : '#d6382f')}${stat(sm.I.overdue, 'Overdue inspections', sm.I.overdue ? '#d6382f' : '#1f9d6b')}${stat(sm.O.open, 'Open overrides')}${stat(sm.A.overdue, 'Overdue actions', sm.A.overdue ? '#d6382f' : '#1f9d6b')}</tr></table>
 ${items.length ? `<h3 style="margin:22px 0 6px;font-size:15px">Needs attention</h3><table width="100%" cellspacing="0">${items.slice(0, 40).map(x => row(x.sev >= 3 ? '#d6382f' : '#f5a100', x.title, x.sub)).join('')}</table>` : '<p style="margin-top:20px">No overdue items. Nice work.</p>'}
 ${soonItems.length ? `<h3 style="margin:22px 0 6px;font-size:15px">Coming up</h3><table width="100%" cellspacing="0">${soonItems.map(x => row('#14424f', x.title, fmtDate(x.date) + (x.days === 0 ? ' · today' : ' · in ' + x.days + ' days'))).join('')}</table>` : ''}
 ${opts.link ? `<p style="margin-top:24px"><a href="${esc(opts.link)}" style="background:#0d2530;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none">Open tracker</a></p>` : ''}

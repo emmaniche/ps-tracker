@@ -28,6 +28,9 @@
     act: () => ({ risk: 'M', status: 'Open', identified: S.t, progress: 0 }),
     kpi: () => ({ month: thisMonth() })
   };
+  const FIELD_LABELS = {}; Object.values(SCHEMA).forEach(sc => sc.fields.forEach(f => { if (!FIELD_LABELS[f.k]) FIELD_LABELS[f.k] = f.l; }));
+  Object.assign(FIELD_LABELS, { signedOff: 'Signed off', signedBy: 'Signed by', signedAt: 'Signed at', reopenReason: 'Reopen reason', docs: 'Documents', updatedBy: 'Updated by', _new: 'New' });
+  const fmtVal = v => (v == null || v === '' || (Array.isArray(v) && !v.length)) ? '—' : Array.isArray(v) ? v.length + ' item(s)' : typeof v === 'object' ? '…' : String(v).slice(0, 80);
 
   /* ---------- derived-info shortcuts ---------- */
   const iI = r => P.inspInfo(r, S.t, S.sm.soon), oI = o => P.ovrInfo(o, S.t, S.sm.maxH), aI = a => P.actInfo(a, S.t);
@@ -146,6 +149,28 @@
     <div class="panel"><div class="panel-h"><h3>Coming up</h3><small>next 60 days</small></div>${sm.upcoming.filter(u => u.days >= 0).length ? `<ul class="alist">${sm.upcoming.filter(u => u.days >= 0).slice(0, 7).map(u => `<li data-a="open" data-col="${u.type}" data-id="${u.id}"><span class="sev b"></span><div><b>${esc(u.title)}</b><small>${fmtDate(u.date)} · ${u.days === 0 ? 'today' : 'in ' + u.days + ' days'}</small></div><span class="tag">${chip(u.type === 'insp' ? 'Inspection' : 'Action due', 'blue')}</span></li>`).join('')}</ul>` : '<div class="empty"><b>Quiet period</b>No inspections or actions fall due in the next 60 days.</div>'}</div></div>`;
   }
 
+  /* ---------- audit timeline (record of every change) ---------- */
+  function auditEntryHtml(e) {
+    const col = SCHEMA[e.col], colName = col ? col.name : e.col;
+    const when = e.ts ? new Date(e.ts).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+    const diffs = (e.diffs || []).map(d => `<span class="diff"><b>${esc(FIELD_LABELS[d.k] || d.k)}</b> ${esc(fmtVal(d.from))} → ${esc(fmtVal(d.to))}</span>`).join('');
+    return `<li class="audit"><span class="audit-dot"></span><div class="audit-main"><b>${esc(e.by || 'User')}</b> ${esc(e.action)} ${esc(e.label || '')}
+    <small>${e.col ? chip(colName, { insp: 'blue', ovr: 'amber', act: 'green', sce: '', kpi: '' }[e.col] || '') : ''} · ${esc(when)}</small>
+    ${diffs ? `<div class="diffs">${diffs}</div>` : ''}</div></li>`;
+  }
+  const auditList = l => l.length ? `<ul class="audit-list">${l.map(auditEntryHtml).join('')}</ul>` : '<div class="empty"><b>No audit entries yet</b>The first save will appear here with who changed what.</div>';
+
+  function auditView() {
+    const entries = (S.db.log || []).slice().reverse();
+    const cols = [['all', 'All'], ['sce', 'SCE register'], ['insp', 'Inspections'], ['ovr', 'Overrides'], ['act', 'Actions'], ['kpi', 'KPIs']];
+    const cur = S._auditCol || 'all';
+    const list = cur === 'all' ? entries : entries.filter(e => e.col === cur);
+    const show = entries.filter(e => e.action === 'deleted').length;
+    return `<div class="page-head"><div><h2>Audit timeline</h2><p>Who changed what, and when. Written by the server on every save, with a field-level diff — it cannot be edited from the browser.</p></div><div class="sp"><small style="color:var(--muted)">${entries.length} entries · ${show} deletions</small></div></div>
+    <div class="filters">${cols.map(([k, l]) => `<button class="pill" aria-pressed="${cur === k}" data-a="auditcol" data-id="${k}">${l}</button>`).join('')}<span style="flex:1"></span></div>
+    <div class="panel"><div class="panel-b" id="tbl">${auditList(list)}</div></div>`;
+  }
+
   /* ---------- alerts ---------- */
   function alertsView() {
     const sm = S.sm, d = P.buildDigest(S.db, S.settings, S.t, { site: S.loc });
@@ -154,9 +179,9 @@
     <div class="note ${rec.length ? '' : 'warn'}" style="margin-bottom:16px">${rec.length ? `Digest goes to ${rec.map(esc).join(', ')}${S.mode === 'server' && S.settings.digestEnabled ? ` and is sent automatically every day at ${String(S.settings.digestHour).padStart(2, '0')}:00 (${esc(S.settings.timezone)}).` : '.'}` : 'No email recipients yet. Add them under <a href="#/settings">Settings</a> to switch on notifications.'}</div>
     <div class="grid g-2"><div class="panel"><div class="panel-h"><h3>Needs attention</h3><small>${sm.attention.length}</small></div>${attList(sm.attention, 100)}</div>
     <div class="panel"><div class="panel-h"><h3>Coming up</h3><small>next 60 days</small></div>${sm.upcoming.filter(u => u.days >= 0).length ? `<ul class="alist">${sm.upcoming.filter(u => u.days >= 0).map(u => `<li data-a="open" data-col="${u.type}" data-id="${u.id}"><span class="sev b"></span><div><b>${esc(u.title)}</b><small>${fmtDate(u.date)} · ${u.days === 0 ? 'today' : 'in ' + u.days + ' days'}</small></div></li>`).join('')}</ul>` : '<div class="empty"><b>Quiet period</b>Nothing falls due in the next 60 days.</div>'}</div></div>
-    <div class="panel" style="margin-top:18px"><div class="panel-h"><h3>Recent activity</h3></div><div class="panel-b">${logHtml(S.db.log.slice(-12).reverse())}</div></div>`;
+    <div class="panel" style="margin-top:18px"><div class="panel-h"><h3>Recent activity</h3></div><div class="panel-b">${auditList((S.db.log || []).slice(-12).reverse())}</div></div>`;
   }
-  const logHtml = l => l.length ? `<ul class="log">${l.map(e => `<li><b>${esc(e.by)}</b> ${esc(e.action)} ${esc(e.label)} <small>· ${new Date(e.ts).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</small></li>`).join('')}</ul>` : '<div style="color:var(--muted)">No activity recorded yet.</div>';
+  const logHtml = l => l.length ? `<ul class="log">${l.map(e => `<li><b>${esc(e.by)}</b> ${esc(e.action)} ${esc(e.label || '')} <small>· ${new Date(e.ts).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</small>${(e.diffs || []).length ? `<span class="diffs">${e.diffs.map(d => `<span class="diff"><b>${esc(FIELD_LABELS[d.k] || d.k)}</b> ${esc(fmtVal(d.from))} → ${esc(fmtVal(d.to))}</span>`).join('')}</span>` : ''}</li>`).join('')}</ul>` : '<div style="color:var(--muted)">No activity recorded yet.</div>';
 
   /* ---------- timeline ---------- */
   function timeline() {
@@ -292,26 +317,29 @@
     S.drawer = { col, rec, added: [] };
     renderDrawer();
   }
-  const fieldHtml = (f, rec) => {
+  const fieldHtml = (f, rec, locked) => {
     const v = rec[f.k] == null ? '' : rec[f.k], c = f.full ? ' full' : '', d = `data-k="${f.k}"`; let i;
+    const lockedHere = locked && locked.includes(f.k) && rec.signedOff && !String(rec.reopenReason || '').trim();
+    const dis = lockedHere ? ' Disabled title="Signed off — enter a reopen reason to unlock"' : '';
     switch (f.t) {
-      case 'area': i = `<textarea ${d}>${esc(v)}</textarea>`; break;
+      case 'area': i = `<textarea ${d}${dis}>${esc(v)}</textarea>`; break;
       case 'sel': {
         let o = f.opts || [], lb = f.labels || {};
         if (f.k === 'site') { o = [''].concat(locs()); lb = { '': 'Unassigned' }; }
         o = o.includes(v) || !v ? o : o.concat(v);
-        i = `<select ${d}>${o.map(x => `<option value="${esc(x)}" ${x === v ? 'selected' : ''}>${esc(lb[x] || x || 'Unassigned')}</option>`).join('')}</select>`; break;
+        i = `<select ${d}${dis}>${o.map(x => `<option value="${esc(x)}" ${x === v ? 'selected' : ''}>${esc(lb[x] || x || 'Unassigned')}</option>`).join('')}</select>`; break;
       }
-      case 'date': i = `<input type="date" ${d} value="${esc(v)}">`; break;
-      case 'dt': i = `<input type="datetime-local" ${d} value="${esc(v)}">`; break;
-      case 'month': i = `<input type="month" ${d} value="${esc(String(v).slice(0, 7))}">`; break;
-      case 'num': i = `<input type="number" ${d} value="${esc(v)}" min="0">`; break;
-      case 'email': i = `<input type="email" ${d} value="${esc(v)}" placeholder="name@company.com">`; break;
-      case 'tag': i = `<input ${d} list="tags" value="${esc(v)}" autocomplete="off">`; break;
-      case 'range': i = `<div class="progress"><input type="range" min="0" max="100" step="5" ${d} value="${+v || 0}" data-out="prog"><b id="prog">${+v || 0}%</b></div>`; break;
-      default: i = `<input ${d} value="${esc(v)}">`;
+      case 'date': i = `<input type="date" ${d} value="${esc(v)}"${dis}>`; break;
+      case 'dt': i = `<input type="datetime-local" ${d} value="${esc(v)}"${dis}>`; break;
+      case 'month': i = `<input type="month" ${d} value="${esc(String(v).slice(0, 7))}"${dis}>`; break;
+      case 'num': i = `<input type="number" ${d} value="${esc(v)}" min="0"${dis}>`; break;
+      case 'email': i = `<input type="email" ${d} value="${esc(v)}" placeholder="name@company.com"${dis}>`; break;
+      case 'tag': i = `<input ${d} list="tags" value="${esc(v)}" autocomplete="off"${dis}>`; break;
+      case 'range': i = `<div class="progress"><input type="range" min="0" max="100" step="5" ${d} value="${+v || 0}" data-out="prog"${dis}><b id="prog">${+v || 0}%</b></div>`; break;
+      default: i = `<input ${d} value="${esc(v)}"${dis}>`;
     }
-    return `<label class="f${c}"><span>${esc(f.l)}${f.req ? ' *' : ''}</span>${i}${f.hint ? `<small>${f.hint}</small>` : ''}</label>`;
+    const note = lockedHere ? '<small class="locked-note">Signed off — this field is locked. Enter a reopen reason under Sign-off to unlock it.</small>' : '';
+    return `<label class="f${c}${lockedHere ? ' locked' : ''}"><span>${esc(f.l)}${f.req ? ' *' : ''}</span>${i}${note}${f.hint && !lockedHere ? `<small>${f.hint}</small>` : ''}</label>`;
   };
   function autoHtml(col, r) {
     if (col === 'insp') { const i = iI(r); return `<span>Next due <b>${fmtDate(i.next)}</b></span>${inspStateChip(i)}`; }
@@ -329,18 +357,25 @@
     const items = [...st.insp.map(r => ['insp', r, r.type, inspStateChip(iI(r))]), ...st.ovr.map(r => ['ovr', r, r.type + ' override', ovrStateChip(oI(r))]), ...st.act.map(r => ['act', r, P.short(r.desc, 50), actStateChip(aI(r))])];
     return `<div class="sec-t">Linked records <small style="color:var(--muted);font-family:var(--font);font-weight:400">${items.length}</small></div>${items.length ? `<ul class="alist" style="border:1px solid var(--line);border-radius:8px">${items.map(([c, r, t, ch]) => `<li data-a="open" data-col="${c}" data-id="${r.id}"><div><b>${esc(t)}</b><small>${SCHEMA[c].one}</small></div><span class="tag">${ch}</span></li>`).join('')}</ul>` : '<div style="color:var(--muted)">Add an inspection with this tag to start assuring this barrier.</div>'}`;
   }
+  const SIGNABLE = ['insp', 'ovr', 'act'];
+  function signBox(rec, locked) {
+    if (!rec.signedOff) return '<div class="signbox"><b>Not signed off yet</b><small>Closing this record signs it off automatically, stamped with your name.</small></div>';
+    return `<div class="signbox ok"><b>Signed off by ${esc(rec.signedBy || '—')}</b><small>${rec.signedAt ? fmtDate(String(rec.signedAt).slice(0, 10)) + ' · ' + esc(String(rec.signedAt).slice(11, 16)) : ''}</small><label class="f" style="margin-top:8px"><span>Reopen reason (unlocks the key fields)</span><input name="reopenReason" data-k="reopenReason" value="${esc(rec.reopenReason || '')}" placeholder="Why is this being reopened?"></label></div>`;
+  }
   function renderDrawer() {
     const dr = S.drawer; let layer = $('#layer'); if (!dr) { layer.innerHTML = ''; return; }
     const { col, rec } = dr, sc = SCHEMA[col];
     const title = rec._new ? 'New ' + sc.one.toLowerCase() : (col === 'kpi' ? fmtMonth(rec.month) : rec.tag || sc.one);
     const sub = rec._new ? '' : col === 'sce' ? [rec.site, rec.desc].filter(Boolean).join(' · ') : [siteOf(rec), rec.asset, col === 'insp' ? rec.type : ''].filter(Boolean).join(' · ');
-    const logs = S.db.log.filter(l => l.rid === rec.id).slice(-6).reverse();
+    const logs = (S.db.log || []).filter(l => l.rid === rec.id).slice().reverse();
+    const locked = P.LOCKED[col] || [];
     layer.innerHTML = `<div class="scrim" data-a="closedrawer"></div><aside class="drawer" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="drawer-h"><div style="flex:1;min-width:0"><h2>${esc(title)}</h2><small>${esc(sub)}</small></div><button class="iconbtn" data-a="closedrawer" aria-label="Close">${ic('x')}</button></div>
     <div class="drawer-b"><datalist id="tags">${S.db.sce.map(s => `<option value="${esc(s.tag)}">${esc(s.desc || '')}</option>`).join('')}</datalist>
-    <form class="form" id="rform" onsubmit="return false">${sc.fields.map(f => fieldHtml(f, rec)).join('')}<div class="autobox" id="autobox">${autoHtml(col, rec)}</div></form>
+    <form class="form" id="rform" onsubmit="return false">${sc.fields.map(f => fieldHtml(f, rec, locked)).join('')}<div class="autobox" id="autobox">${autoHtml(col, rec)}</div></form>
+    ${SIGNABLE.includes(col) && !rec._new ? `<div class="sec-t">${ic('check')} Sign-off</div><div class="drawer-signin">${signBox(rec)}</div>` : ''}
     ${col === 'sce' && !rec._new ? linkedHtml(rec) : ''}
     <div class="sec-t">${ic('clip')} Documents <small style="color:var(--muted);font-family:var(--font);font-weight:400">${(rec.docs || []).length}</small></div><div id="docbox">${docsHtml(rec)}</div>
-    ${logs.length ? `<div class="sec-t">History</div>${logHtml(logs)}` : ''}</div>
+    ${logs.length ? `<div class="sec-t">History <small style="color:var(--muted);font-family:var(--font);font-weight:400">${logs.length}</small></div>${auditList(logs)}` : ''}</div>
     <div class="drawer-f"><button class="btn primary" data-a="save">Save</button><button class="btn" data-a="closedrawer">Cancel</button><span style="flex:1"></span>${rec._new ? '' : `<button class="btn danger" data-a="delrec">${ic('trash')}Delete</button>`}</div></aside>`;
     const first = layer.querySelector('input:not([type=range]),select'); if (rec._new && first) first.focus();
   }
@@ -357,7 +392,10 @@
   async function persistDocs() {
     const dr = S.drawer; if (dr.rec._new) return;
     const stored = S.db[dr.col].find(r => r.id === dr.rec.id); if (!stored) return;
-    stored.docs = clone(dr.rec.docs); await APP.upsert(dr.col, stored);
+    stored.docs = clone(dr.rec.docs);
+    // attach/link is a change to a signed record: it must carry a reopen reason
+    if (stored.signedOff) stored.reopenReason = (dr.rec.reopenReason || stored.reopenReason || '').trim() || 'Document attached or unlinked';
+    await APP.upsert(dr.col, stored);
   }
   async function addFiles(files) {
     const dr = S.drawer; collect();
@@ -372,8 +410,18 @@
     const was = S.db[col].find(r => r.id === rec.id), isNew = rec._new;
     if (col === 'sce' && was && was.tag !== rec.tag) ['insp', 'ovr', 'act'].forEach(c => S.db[c].forEach(r => { if (r.tag === was.tag) { r.tag = rec.tag; APP.upsert(c, r); } }));
     if (col !== 'sce' && col !== 'kpi' && !rec.asset) { const s = S.db.sce.find(s => s.tag === rec.tag); if (s) rec.asset = s.asset; }
+    // client-side sign-off check, before the round trip
+    const issues = P.signoffIssues(col, rec, was || null, S.settings);
+    if (issues.length) return toast(issues[0].m, true);
     try {
-      await APP.upsert(col, rec); await APP.logEvent(isNew ? 'added' : 'updated', col, rec, label(col, rec));
+      const before = was ? clone(was) : null;
+      await APP.upsert(col, rec);
+      if (S.mode === 'static') {
+        // static mode: no server, so the client writes the audit entry with diffs
+        const diffs = P.diffRecords(before, rec);
+        const e = { id: P.uid(), ts: new Date().toISOString(), by: S.user || 'User', action: isNew ? 'added' : 'updated', col, rid: rec.id, label: label(col, rec), diffs };
+        await APP.upsert('log', e).catch(() => {});
+      }
       S.drawer = null; renderDrawer(); render(); toast('Saved');
     } catch (e) { if (e.auth) return showLogin(); toast(e.message || 'Could not save', true); }
   }
@@ -448,8 +496,8 @@
   }
 
   /* ---------- shell ---------- */
-  const NAV = [['dashboard', 'Dashboard', 'dash'], ['alerts', 'Alerts', 'bell'], ['timeline', 'Timeline', 'time'], ['sep'], ['sce', 'SCE register', 'shield'], ['insp', 'Inspections', 'check'], ['ovr', 'Overrides', 'unlock'], ['act', 'Actions', 'flag'], ['kpi', 'KPIs', 'chart'], ['sep'], ['docs', 'Documents', 'folder'], ['summary', 'Reports', 'doc'], ['settings', 'Settings', 'gear']];
-  const TITLES = { dashboard: 'Dashboard', alerts: 'Alerts', timeline: 'Timeline', sce: 'SCE register', insp: 'Inspections', ovr: 'Overrides', act: 'Actions', kpi: 'KPIs', docs: 'Documents', summary: 'Reports', settings: 'Settings' };
+  const NAV = [['dashboard', 'Dashboard', 'dash'], ['alerts', 'Alerts', 'bell'], ['timeline', 'Timeline', 'time'], ['sep'], ['sce', 'SCE register', 'shield'], ['insp', 'Inspections', 'check'], ['ovr', 'Overrides', 'unlock'], ['act', 'Actions', 'flag'], ['kpi', 'KPIs', 'chart'], ['sep'], ['docs', 'Documents', 'folder'], ['audit', 'Audit log', 'clock'], ['summary', 'Reports', 'doc'], ['settings', 'Settings', 'gear']];
+  const TITLES = { dashboard: 'Dashboard', alerts: 'Alerts', timeline: 'Timeline', sce: 'SCE register', insp: 'Inspections', ovr: 'Overrides', act: 'Actions', kpi: 'KPIs', docs: 'Documents', audit: 'Audit log', summary: 'Reports', settings: 'Settings' };
   function chrome() {
     const sm = S.sm, s = S.settings, n = sm.attention.length;
     return `<aside class="side" id="side"><div class="brand-lockup"><img src="${esc(s.logo || 'brand/oml11-logo.png')}" alt="NNPC E&amp;P Limited and WAGL OML 11 Limited"></div><div class="brand"><div><b>${esc(s.project)}</b><small>${esc(S.loc || (s.client ? 'for ' + s.client : s.location))}</small></div></div>
@@ -463,7 +511,7 @@
     <div class="meters" aria-label="Status bar"><div class="meter"><div class="row"><span>Inspections on time</span><b>${I.onTimePct}%</b></div>${segBar(I.ok, I.soon, I.overdue)}</div><div class="meter"><div class="row"><span>Actions closed</span><b>${A.closedPct}%</b></div>${segBar(A.closed, A.open - A.overdue, A.overdue)}</div><div class="meter"><div class="row"><span>Overrides controlled</span><b>${O.controlledPct}%</b></div>${segBar(O.controlled, 0, O.open - O.controlled)}</div><div class="meter" style="min-width:90px"><div class="row"><span>Health index</span><b>${sm.empty ? '–' : sm.index}</b></div><div class="bar"><i class="${sm.index >= 75 ? 'g' : sm.index >= 60 ? 'a' : 'r'}" style="width:${sm.index}%"></i></div></div></div>
     <div class="top-actions"><button class="iconbtn" data-a="nav" data-id="alerts" aria-label="${n} alerts">${ic('bell')}${n ? `<span class="dot">${n}</span>` : ''}</button><button class="iconbtn" data-a="theme" aria-label="Switch colour theme">${ic(document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon')}</button></div></header>`;
   }
-  const VIEWS = { dashboard, alerts: alertsView, timeline, docs: docsView, summary: summaryView, settings: settingsView, sce: () => listView('sce'), insp: () => listView('insp'), ovr: () => listView('ovr'), act: () => listView('act'), kpi: () => listView('kpi') };
+  const VIEWS = { dashboard, alerts: alertsView, timeline, audit: auditView, docs: docsView, summary: summaryView, settings: settingsView, sce: () => listView('sce'), insp: () => listView('insp'), ovr: () => listView('ovr'), act: () => listView('act'), kpi: () => listView('kpi') };
   function render() {
     if (S.loc && !locs().includes(S.loc)) { S.loc = ''; APP.lsSet('ps_loc', ''); }
     S.t = P.todayISO(S.settings.timezone); S._smap = P.siteMap(S.db); S.sm = P.summarize(S.db, S.settings, S.t, { site: S.loc });
@@ -487,6 +535,7 @@
     filter: el => { S.flt[el.dataset.col] = el.dataset.id; render(); },
     closedrawer: () => closeDrawer(true),
     save: saveRecord,
+    auditcol: el => { S._auditCol = el.dataset.id; render(); },
     delrec: async () => { const { col, rec } = S.drawer; if (!(await confirmDlg('Delete this record?', `${label(col, rec) || SCHEMA[col].one} and its attached documents will be removed. This cannot be undone.`, 'Delete', true))) return; for (const d of rec.docs || []) await APP.dropFile(d); await APP.remove(col, rec.id); await APP.logEvent('deleted', col, rec, label(col, rec)); S.drawer = null; render(); toast('Deleted'); },
     pick: () => $('#filepick').click(),
     addlink: async () => { collect(); const r = await promptDlg('Add a link', [{ k: 'name', l: 'Title', ph: 'e.g. Permit to work PTW-2231', req: 1 }, { k: 'url', l: 'Web address', type: 'url', ph: 'https://', req: 1 }], 'Add link', 'Link to a file on SharePoint, Google Drive, OneDrive or any web page.'); if (!r) return; const m = { id: P.uid(), kind: 'link', name: r.name, url: r.url, added: new Date().toISOString(), by: S.user || 'User' }; S.drawer.rec.docs.push(m); await persistDocs(); await APP.logEvent('linked ' + r.name + ' to', S.drawer.col, S.drawer.rec, label(S.drawer.col, S.drawer.rec)); renderDrawer(); renderChrome(); },
@@ -525,6 +574,7 @@
     const el = e.target;
     if (el.dataset.in === 'q') { S.q[el.dataset.col] = el.value; const t = $('#tbl'); if (t) t.innerHTML = el.dataset.col === 'docs' ? docsTable(allDocs().filter(x => (x.d.name + ' ' + label(x.col, x.r)).toLowerCase().includes(el.value.toLowerCase()))) : tableHtml(el.dataset.col); }
     else if (el.dataset.in === 'tlq') { S.tl.q = el.value; clearTimeout(el._t); el._t = setTimeout(() => { render(); const i = $('[data-in=tlq]'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); }
+    else if (el.dataset.k === 'reopenReason' && S.drawer) { S.drawer.rec.reopenReason = el.value; renderDrawer(); const i = document.querySelector('[data-k=reopenReason]'); i && i.focus(); i && i.setSelectionRange(i.value.length, i.value.length); }
     else if (el.closest('#rform') && S.drawer) {
       if (el.dataset.out) $('#' + el.dataset.out).textContent = el.value + '%';
       collect(); const dr = S.drawer;

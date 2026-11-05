@@ -194,6 +194,23 @@ table.t{width:100%;border-collapse:collapse;font-size:14px}
 .progress{display:flex;gap:10px;align-items:center}
 .progress input[type=range]{padding:0;min-height:0;border:0;accent-color:var(--ink-2)}
 
+/* sign-off + audit */
+.f.locked input,.f.locked select,.f.locked textarea{opacity:.55;cursor:not-allowed}
+.locked-note{display:block;margin-top:4px;color:var(--amber);font-size:12.5px}
+.signbox{display:flex;flex-direction:column;gap:4px;border:1px solid var(--line-2);background:var(--surface-2);border-radius:10px;padding:12px 14px}
+.signbox b{font-size:14px}
+.signbox small{color:var(--muted)}
+.signbox.ok{border-color:#8ec7ae;background:var(--green-bg)}
+.audit-list{list-style:none;margin:0;padding:0}
+.audit{position:relative;padding:8px 0 8px 22px;border-left:2px solid var(--line);margin-left:6px}
+.audit-dot{position:absolute;left:-5px;top:13px;width:8px;height:8px;border-radius:50%;background:var(--line-2)}
+.audit .audit-main b{font-weight:600}
+.audit .audit-main small{color:var(--muted);display:block;margin-top:1px}
+.diffs{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.diff{display:inline-flex;gap:6px;align-items:baseline;background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:2px 7px;font-size:12.5px;color:var(--muted)}
+.diff b{color:var(--text);font-weight:600;font-size:12.5px}
+.log .diffs{display:inline-flex;margin-left:8px}
+
 /* timeline */
 .tl{overflow:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
 .tl-in{position:relative;min-width:980px}

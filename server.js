@@ -191,7 +191,7 @@ const ORIGINS = (process.env.CORS_ORIGIN || '*').split(',').map(o => o.trim().re
 app.use((req, res, next) => {
   const origin = (req.headers.origin || '').replace(/\/$/, '');
   const allow = ORIGINS.includes('*') ? '*' : (ORIGINS.includes(origin) ? origin : '');
-  const h = { 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS', 'Vary': 'Origin', 'X-Content-Type-Options': 'nosniff' };
+  const h = { 'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-User', 'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS', 'Vary': 'Origin', 'X-Content-Type-Options': 'nosniff' };
   if (allow) h['Access-Control-Allow-Origin'] = allow;
   res.set(h);
   if (req.method === 'OPTIONS') return res.sendStatus(204);
@@ -263,19 +263,45 @@ app.post('/api/email/digest', async (req, res) => {
 });
 
 /* records */
+function recLabel(col, rec) {
+  if (!rec) return '';
+  if (col === 'kpi') return [rec.month, rec.site].filter(Boolean).join(' ');
+  return [rec.tag, rec.type || rec.corrective || rec.desc || rec.asset].filter(Boolean).join(' ').slice(0, 80);
+}
+function audit(action, col, rid, label, diffs, by) {
+  const e = { id: crypto.randomBytes(6).toString('hex'), ts: new Date().toISOString(), by: by || 'User', action, col, rid, label, diffs: diffs || [] };
+  state.db.log.push(e);
+  if (state.db.log.length > 500) state.db.log.splice(0, state.db.log.length - 500);
+  return e;
+}
 app.put('/api/:col/:id', (req, res) => {
   const { col, id } = req.params; if (!COLS.includes(col)) return res.sendStatus(404);
-  const rec = Object.assign({}, req.body, { id }), arr = state.db[col], i = arr.findIndex(r => r.id === id), prev = i >= 0 ? arr[i] : null;
+  const by = String(req.get('X-User') || 'User').slice(0, 60);
+  let rec = Object.assign({}, req.body, { id }), arr = state.db[col], i = arr.findIndex(r => r.id === id), prev = i >= 0 ? arr[i] : null;
+  if (col !== 'log') {
+    rec = PS.stampRecord(col, rec, prev, by, new Date().toISOString());
+    const issues = PS.signoffIssues(col, rec, prev, state.settings);
+    if (issues.length) return res.status(422).json({ error: issues[0].m, field: issues[0].k, issues });
+  }
   if (i >= 0) arr[i] = rec; else arr.push(rec);
   if (col === 'log' && arr.length > 500) arr.splice(0, arr.length - 500);
-  save(); res.json({ rev: state.rev });
+  if (col !== 'log') {
+    const diffs = PS.diffRecords(prev, rec);
+    audit(prev ? 'updated' : 'added', col, id, recLabel(col, rec), diffs, by);
+    if (col === 'sce' && prev && prev.tag !== rec.tag) ['insp', 'ovr', 'act'].forEach(c => (state.db[c] || []).forEach(r => { if (r.tag === prev.tag) r.tag = rec.tag; }));
+  }
+  save(); res.json({ rev: state.rev, rec });
   if (col === 'act' && !prev && rec.risk === 'H' && rec.status !== 'Closed') instantAlert('New high-risk action: ' + rec.tag, `A high-risk action was added for ${rec.tag}: ${rec.desc}. Owner: ${rec.owner || 'unassigned'}. Target: ${PS.fmtDate(rec.target)}.`);
   if (col === 'insp' && rec.result === 'Fail' && (!prev || prev.result !== 'Fail')) instantAlert('Test failed: ' + rec.tag, `${rec.tag} (${rec.type}) failed its last test. Raise a defect and confirm compensating measures.`);
   if (col === 'ovr' && !prev && rec.risk !== 'Yes' && rec.status !== 'Closed') instantAlert('Override without risk assessment: ' + rec.tag, `An override on ${rec.tag} was recorded without a risk assessment.`);
 });
 app.delete('/api/:col/:id', (req, res) => {
   const { col, id } = req.params; if (!COLS.includes(col)) return res.sendStatus(404);
-  state.db[col] = state.db[col].filter(r => r.id !== id); save(); res.json({ rev: state.rev });
+  const by = String(req.get('X-User') || 'User').slice(0, 60);
+  const prev = (state.db[col] || []).find(r => r.id === id) || null;
+  state.db[col] = state.db[col].filter(r => r.id !== id);
+  if (col !== 'log' && prev) audit('deleted', col, id, recLabel(col, prev), [], by);
+  save(); res.json({ rev: state.rev });
 });
 
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'], maxAge: '5m' }));

@@ -18,6 +18,7 @@ window.APP = (function () {
     dash: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
     bell: '<path d="M6 8a6 6 0 1 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10.3 21a2 2 0 0 0 3.4 0"/>',
     time: '<path d="M3 5h9M3 12h14M3 19h7"/><circle cx="16" cy="5" r="2"/><circle cx="21" cy="19" r="2"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     shield: '<path d="M12 3 4 6v6c0 4.5 3.2 8 8 9 4.8-1 8-4.5 8-9V6z"/><path d="m9 12 2 2 4-4"/>',
     check: '<rect x="4" y="4" width="16" height="17" rx="2"/><path d="M9 3h6v3H9z"/><path d="m8.5 13 2.5 2.5L16 10.5"/>',
     unlock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/>',
@@ -57,10 +58,11 @@ window.APP = (function () {
   let token = lsGet('ps_token');
   async function req(method, path, body, form) {
     const h = {}; if (token) h.Authorization = 'Bearer ' + token;
+    if (S.user) h['X-User'] = S.user;
     if (body && !form) h['Content-Type'] = 'application/json';
     const r = await fetch(base + '/api' + path, { method, headers: h, body: form ? body : body ? JSON.stringify(body) : undefined, cache: 'no-store' });
     if (r.status === 401) throw { auth: true };
-    if (!r.ok) { let m = ''; try { m = (await r.json()).error; } catch (e) { /* not json */ } throw new Error(m || r.statusText); }
+    if (!r.ok) { let m = '', j = null; try { j = await r.json(); m = j.error; } catch (e) { /* not json */ } throw new Error(m || r.statusText); }
     return r.status === 204 ? null : r.json();
   }
   const mergeSettings = s => { const d = clone(P.DEFAULT_SETTINGS); s = s || {}; return Object.assign(d, s, { rules: Object.assign(d.rules, s.rules || {}), emailjs: Object.assign(d.emailjs, s.emailjs || {}) }); };
@@ -91,8 +93,13 @@ window.APP = (function () {
   async function upsert(col, rec) {
     const clean = Object.assign({}, rec); delete clean._new;
     const arr = S.db[col]; const i = arr.findIndex(r => r.id === clean.id);
+    const prev = i >= 0 ? arr[i] : null;
     if (i >= 0) arr[i] = clean; else arr.push(clean);
-    if (S.mode === 'server') { const j = await req('PUT', `/${col}/${clean.id}`, clean); if (j && j.rev) S.rev = j.rev; }
+    if (S.mode === 'server') {
+      const j = await req('PUT', `/${col}/${clean.id}`, clean); if (j && j.rev) S.rev = j.rev;
+      if (j && j.rec && col !== 'log') Object.assign(clean, j.rec);
+      if (col !== 'log' && j && j.rec) { const k = S.db[col].findIndex(r => r.id === clean.id); if (k >= 0) S.db[col][k] = j.rec; }
+    }
     else { if (col === 'log' && arr.length > 400) arr.splice(0, arr.length - 400); await persistLocal(); }
   }
   async function remove(col, id) {
@@ -107,7 +114,10 @@ window.APP = (function () {
     if (S.mode === 'server') { const j = await req('POST', '/import', { db: S.db, settings: S.settings }); if (j && j.rev) S.rev = j.rev; } else await persistLocal();
   }
   function logEvent(action, col, rec, label) {
-    const e = { id: P.uid(), ts: new Date().toISOString(), by: S.user || 'User', action, col, rid: rec && rec.id, label: label || (rec && (rec.tag || rec.month || rec.asset)) || '' };
+    // In server mode the server writes the audit entry itself (with a field
+    // diff of the signed-off record), so the browser does not double-log.
+    if (S.mode === 'server' && col !== 'log') return Promise.resolve();
+    const e = { id: P.uid(), ts: new Date().toISOString(), by: S.user || 'User', action, col, rid: rec && rec.id, label: label || (rec && (rec.tag || rec.month || rec.asset)) || '', diffs: [] };
     return upsert('log', e).catch(() => {});
   }
 

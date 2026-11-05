@@ -31,7 +31,35 @@
   };
 
   /* ---------- sign-off rules (shared by the browser and the API) ----------
-     Returns a list of {k, m}: k is the field to blame, m is the message. */
+     Returns a list of {k, m}: k is the field to blame, m is the message.
+
+     Auto sign-off: the server stamps signedOff/signedBy/signedAt itself.
+     Once a record is signed off, its critical fields lock until a reason
+     is supplied to reopen it. */
+  const LOCKED = {
+    insp: ['result', 'last'],
+    ovr: ['status', 'start', 'end', 'type'],
+    act: ['status', 'progress', 'corrective', 'owner']
+  };
+  const LOCKED_MSG = {
+    insp: 'This inspection is signed off. Give a reason to reopen it before changing the result or test date.',
+    ovr: 'This override has been signed off. A reason is required to reopen it.',
+    act: 'This action is signed off. A reason is required to reopen it.'
+  };
+
+  function stampRecord(col, rec, before, by, now) {
+    const ts = now || new Date().toISOString();
+    if (before && before.signedOff && !String(rec.reopenReason || '').trim()) {
+      rec.signedOff = before.signedOff; rec.signedBy = before.signedBy; rec.signedAt = before.signedAt; delete rec.reopenReason;
+      return rec;
+    }
+    if (before && before.signedOff && String(rec.reopenReason || '').trim()) { delete rec.signedOff; delete rec.signedBy; delete rec.signedAt; return rec; }
+    if (col === 'ovr' && rec.status === 'Closed') { rec.signedOff = true; rec.signedBy = by || rec.signedBy || ''; rec.signedAt = ts; delete rec.reopenReason; }
+    if (col === 'act' && rec.status === 'Closed') { rec.signedOff = true; rec.signedBy = by || rec.signedBy || ''; rec.signedAt = ts; delete rec.reopenReason; }
+    if (col === 'insp' && (rec.result === 'Pass' || rec.result === 'Conditional' || rec.result === 'Fail') && String(rec.auth || '').trim() && !rec.signedOff) { rec.signedOff = true; rec.signedBy = by || ''; rec.signedAt = ts; delete rec.reopenReason; }
+    return rec;
+  }
+
   function signoffIssues(col, rec, before, settings) {
     const s = settings || {}, out = [];
     if (s.signoff === false) return out;
@@ -42,24 +70,34 @@
       if (touched && !String(rec.auth || '').trim())
         out.push({ k: 'auth', m: 'Record who verified this test (verification authority) before saving the result.' });
       if (before && before.signedOff && (changed('result') || changed('last')) && !String(rec.reopenReason || '').trim())
-        out.push({ k: 'reopenReason', m: 'This inspection is signed off. Give a reason to reopen it before changing the result or test date.' });
+        out.push({ k: 'reopenReason', m: LOCKED_MSG.insp });
     }
 
-    if (col === 'ovr' && rec.status !== 'Closed') {
-      const touched = !before || before.status === 'Closed' || changed('status') || changed('start') || changed('end') || changed('risk');
-      if (touched) {
-        if (String(rec.risk) !== 'Yes') out.push({ k: 'risk', m: 'A risk assessment must be recorded before an override can be open.' });
-        if (!String(rec.approver || '').trim()) out.push({ k: 'approver', m: 'Record who approved this override.' });
-        if (!String(rec.comp || '').trim()) out.push({ k: 'comp', m: 'Describe the compensating measure in place.' });
-        const a = parseDT(rec.start), b = parseDT(rec.end);
-        if (a && b && b <= a) out.push({ k: 'end', m: 'The end time must be after the start time.' });
+    if (col === 'ovr') {
+      const locked = LOCKED.ovr;
+      if (before && before.signedOff && locked.some(changed) && !String(rec.reopenReason || '').trim())
+        out.push({ k: 'reopenReason', m: LOCKED_MSG.ovr });
+      if (rec.status !== 'Closed') {
+        const touched = !before || before.status === 'Closed' || changed('status') || changed('start') || changed('end') || changed('risk');
+        if (touched) {
+          if (String(rec.risk) !== 'Yes') out.push({ k: 'risk', m: 'A risk assessment must be recorded before an override can be open.' });
+          if (!String(rec.approver || '').trim()) out.push({ k: 'approver', m: 'Record who approved this override.' });
+          if (!String(rec.comp || '').trim()) out.push({ k: 'comp', m: 'Describe the compensating measure in place.' });
+          const a = parseDT(rec.start), b = parseDT(rec.end);
+          if (a && b && b <= a) out.push({ k: 'end', m: 'The end time must be after the start time.' });
+        }
       }
     }
 
-    if (col === 'act' && rec.status === 'Closed') {
-      const closing = !before || before.status !== 'Closed';
-      if (+rec.progress !== 100) out.push({ k: 'progress', m: 'Set progress to 100% before closing the action.' });
-      if (closing && !String(rec.notes || '').trim()) out.push({ k: 'notes', m: 'Add a closure note (evidence or reference) before closing.' });
+    if (col === 'act') {
+      const locked = LOCKED.act;
+      if (before && before.signedOff && locked.some(changed) && !String(rec.reopenReason || '').trim())
+        out.push({ k: 'reopenReason', m: LOCKED_MSG.act });
+      if (rec.status === 'Closed') {
+        const closing = !before || before.status !== 'Closed';
+        if (+rec.progress !== 100) out.push({ k: 'progress', m: 'Set progress to 100% before closing the action.' });
+        if (closing && !String(rec.notes || '').trim()) out.push({ k: 'notes', m: 'Add a closure note (evidence or reference) before closing.' });
+      }
     }
     return out;
   }
@@ -348,5 +386,5 @@ ${opts.link ? `<p style="margin-top:24px"><a href="${esc(opts.link)}" style="bac
     return { sce, insp, ovr, act, kpi, log: [] };
   }
 
-  return { DAY, iso, parse, parseDT, diffDays, addDays, todayISO, fmtDate, fmtMonth, esc, uid, short, DEFAULT_SETTINGS, siteMap, siteOf, scopeDb, inspInfo, ovrInfo, actInfo, sceStates, summarize, buildDigest, seed };
+  return { DAY, iso, parse, parseDT, diffDays, addDays, todayISO, fmtDate, fmtMonth, esc, uid, short, DEFAULT_SETTINGS, siteMap, siteOf, scopeDb, inspInfo, ovrInfo, actInfo, sceStates, summarize, buildDigest, seed, signoffIssues, stampRecord, LOCKED, LOCKED_MSG, diffRecords };
 });

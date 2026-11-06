@@ -148,6 +148,31 @@
         <div class="panel"><div class="panel-h"><h3>Inspection status</h3></div><div class="panel-b">${donut([{ v: I.ok, c: 'var(--green)', l: 'On track' }, { v: I.soon, c: 'var(--amber)', l: 'Due soon' }, { v: I.overdue, c: 'var(--red)', l: 'Overdue' }, { v: I.none, c: 'var(--grey)', l: 'No date' }], I.total, 'inspections')}</div></div>
         <div class="panel"><div class="panel-h"><h3>Open actions by risk</h3></div><div class="panel-b">${hbar('High', risk[0], Math.max(...risk, 1), 'var(--red)')}${hbar('Medium', risk[1], Math.max(...risk, 1), 'var(--amber)')}${hbar('Low', risk[2], Math.max(...risk, 1), 'var(--green)')}</div></div>
       </div></div>
+    <div class="grid g-2" style="margin-bottom:18px">
+      <div class="panel"><div class="panel-h"><h3>Data completeness</h3><small>requirements captured vs evidence logged</small></div><div class="panel-b">
+        ${(() => {
+          const layers = [['Safety-critical elements', S.db.sce.length], ['Hazard areas', (S.db.haz || []).length], ['Barrier instances', new Set((S.db.sca || []).map(x => (x.cluster || '') + '|' + x.barrier)).size], ['Critical activities', (S.db.sca || []).length], ['Named positions', new Set((S.db.sca || []).map(x => x.position).filter(Boolean)).size], ['SCE catalogue groups', (S.db.sceg || []).length]];
+          const mx = Math.max(...layers.map(l => l[1]), 1);
+          const evid = S.db.insp.length + S.db.ovr.length + S.db.act.length + S.db.kpi.length;
+          return layers.map(([l, v], i) => hbar(l, v, mx, ['var(--blue)', 'var(--amber)', 'var(--signal)', 'var(--green)', 'var(--blue)', 'var(--grey)'][i])).join('') +
+            `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)"><div class="row" style="display:flex;align-items:center;gap:8px"><span style="flex:1">Assurance evidence logged</span><b style="color:${evid ? 'var(--green)' : 'var(--red)'}">${evid}</b></div>
+            <small style="color:var(--muted)">${evid ? 'The health index is measured from these records.' : 'No inspections, overrides, actions or KPI months yet — the health index stays “Not assured” until real evidence arrives.'}</small></div>`;
+        })()}
+      </div></div>
+      <div class="panel"><div class="panel-h"><h3>Register coverage</h3><small>source gaps carried forward, not hidden</small></div><div class="panel-b">
+        ${(() => {
+          const sceg = S.db.sceg || [], crafted = new Set((S.db.sca || []).flatMap(x => x.groups || []));
+          const live = code => S.db.sce.some(s => sceGroupOf(s) === code);
+          const unmapped = sceg.filter(g => !live(g.code));
+          const missing = [...crafted].filter(c => !sceg.some(g => g.code === c));
+          return `<div class="row" style="display:flex;align-items:center;gap:8px"><span style="flex:1">SCE groups mapped to a facility</span><b>${sceg.filter(g => live(g.code)).length} of ${sceg.length}</b></div>
+          <div class="bar" style="margin:6px 0 12px"><i class="g" style="width:${sceg.length ? sceg.filter(g => live(g.code)).length / sceg.length * 100 : 0}%"></i></div>
+          ${unmapped.length ? `<div style="margin-bottom:10px"><small style="color:var(--muted)">In the standard but not deployed here (${unmapped.length}):</small><div style="margin-top:4px">${unmapped.map(g => chip(g.code, 'amber')).join(' ')}</div></div>` : ''}
+          ${missing.length ? `<div class="note warn" style="margin:0"><b>Cited in barrier text, absent from the matrices (${missing.length}):</b> ${missing.map(c => chip(c, 'red')).join(' ')}. ER003 alone is cited in 115 barrier lines. Raise these with the client before claiming full SCE coverage.</div>` : ''}
+          <div style="margin-top:10px"><button class="btn sm" data-a="nav" data-id="sca">Open barriers &amp; activities</button></div>`;
+        })()}
+      </div></div>
+    </div>
     <div class="grid g-2"><div class="panel"><div class="panel-h"><h3>KPI trend</h3><small>% of SCE population</small></div><div class="panel-b">${kpiChart()}</div></div>
     <div class="panel"><div class="panel-h"><h3>Coming up</h3><small>next 60 days</small></div>${sm.upcoming.filter(u => u.days >= 0).length ? `<ul class="alist">${sm.upcoming.filter(u => u.days >= 0).slice(0, 7).map(u => `<li data-a="open" data-col="${u.type}" data-id="${u.id}"><span class="sev b"></span><div><b>${esc(u.title)}</b><small>${fmtDate(u.date)} · ${u.days === 0 ? 'today' : 'in ' + u.days + ' days'}</small></div><span class="tag">${chip(u.type === 'insp' ? 'Inspection' : 'Action due', 'blue')}</span></li>`).join('')}</ul>` : '<div class="empty"><b>Quiet period</b>No inspections or actions fall due in the next 60 days.</div>'}</div></div>`;
   }
@@ -211,6 +236,92 @@
     <div style="position:absolute;top:34px;bottom:0;left:250px;right:0;pointer-events:none">${grid}</div>
     <div class="tl-today" style="left:calc(250px + (100% - 250px) * ${tp / 100})"><span>Today</span></div></div></div>
     <div class="legend" style="color:var(--muted);margin-top:12px"><span><i style="background:var(--green)"></i>On track</span><span><i style="background:var(--amber)"></i>Due soon / active</span><span><i style="background:var(--red)"></i>Overdue / expired</span><span><i style="background:var(--blue)"></i>In progress</span><span>Faded bar = time since last test. Diamond = due date.</span></div>`;
+  }
+
+  /* ---------- barriers & safety-critical activities ---------- */
+  const sceGroupOf = r => (/([A-Z]{2}\d{3})$/.exec(r && r.tag || '') || [, r && r.group || ''])[1];
+  const actText = x => String(x.activity || '').replace(/^Act\.\s*\d+\s*/i, '');
+  const scaScope = () => (S.db.sca || []).filter(r => !S.loc || r.site === S.loc);
+  const scaRows = () => {
+    const st = S.sca, q = (S.q.sca || '').trim().toLowerCase();
+    let r = scaScope();
+    if (st.act) r = r.filter(x => x.actRef === st.act);
+    if (st.pos) r = r.filter(x => x.position === st.pos);
+    if (st.haz) r = r.filter(x => x.hazardId === st.haz);
+    if (q) r = r.filter(x => `${x.hazard} ${x.threat} ${x.barrier} ${x.position} ${x.activity} ${(x.groups || []).join(' ')}`.toLowerCase().includes(q));
+    return r;
+  };
+  const scaPositions = () => [...new Set(scaScope().map(r => r.position).filter(Boolean))].sort();
+  const scaRefs = () => [...new Set(scaScope().map(r => r.actRef).filter(Boolean))].sort();
+  const groupChip = g => `<button class="chip blue" data-a="scegroup" data-id="${esc(g)}" title="Show this SCE group in the register">${esc(g)}</button>`;
+
+  function scaBody() {
+    const st = S.sca, rows = scaRows();
+    if (st.tab === 'hazards') {
+      const base = scaScope();
+      const list = (S.db.haz || []).filter(h => !S.loc || h.site === S.loc).filter(h => !st.haz || h.id === st.haz);
+      return list.length ? `<div class="tbl-wrap"><table class="t"><thead><tr><th>Hazard no</th><th>Hazard area / system</th><th>Location</th><th>Threats</th><th>Barriers</th><th>Activities</th></tr></thead><tbody>${list.sort((a, b) => (a.site || '').localeCompare(b.site || '') || (+a.no - +b.no)).map(h => {
+        const acts = base.filter(x => x.hazardId === h.id);
+        const threats = new Set(acts.map(x => x.threat).filter(Boolean)).size;
+        const bars = new Set(acts.map(x => x.barrierId)).size;
+        return `<tr data-a="scahaz" data-id="${h.id}"><td>${esc(h.no)}</td><td><b>${esc(h.name)}</b></td><td>${esc(h.site || '')}</td><td class="num">${threats}</td><td class="num">${bars}</td><td class="num">${acts.length}</td></tr>`;
+      }).join('')}</tbody></table></div>` : '<div class="empty"><b>No hazard areas</b>Import the SCE mapping workbook to load them.</div>';
+    }
+    if (st.tab === 'catalogue') {
+      const q = (S.q.sca || '').trim().toLowerCase();
+      const cited = new Set(scaScope().flatMap(r => r.groups || []));
+      const list = (S.db.sceg || []).filter(g => !q || `${g.code} ${g.desc} ${(g.mah || []).join(' ')}`.toLowerCase().includes(q));
+      const missing = [...cited].filter(c => !(S.db.sceg || []).some(g => g.code === c));
+      return `${missing.length ? `<div class="note warn" style="margin-bottom:14px"><b>Cited in barrier text but absent from the SCE matrices:</b> ${missing.map(c => `${groupChip(c)} (${new Set(scaScope().filter(r => (r.groups || []).includes(c)).map(r => r.hazardId)).size} hazard areas)`).join(' ')}. These are the source gaps to resolve before the register can claim full coverage.</div>` : ''}
+        <div class="tbl-wrap"><table class="t"><thead><tr><th>Code</th><th>SCE description</th><th>MAH</th><th>Source clusters</th><th>Facilities linked here</th><th>Coverage</th><th>Barriers citing</th><th>Hazards citing</th></tr></thead><tbody>${list.map(g => {
+          const n = S.db.sce.filter(s => sceGroupOf(s) === g.code).filter(s => !S.loc || s.site === S.loc).length;
+          return `<tr><td><span class="tagno">${esc(g.code)}</span></td><td>${esc(g.desc)}</td><td>${esc((g.mah || []).join(', ') || '—')}</td><td class="num">${g.clusters || 0}</td><td class="num">${n}</td><td>${n ? chip('Mapped', 'green') : chip('Not deployed here', 'amber')}</td><td class="num">${g.barriersCiting || 0}</td><td class="num">${g.hazardsCiting || 0}</td></tr>`;
+        }).join('')}</tbody></table></div>
+        <p class="t-foot" style="margin-top:8px">“Not deployed here” means the group is in the corporate SCE standard but carries no tick against any facility in the source matrices — it is a coverage question for the client, not an app error.</p>`;
+    }
+    /* activities */
+    const per = 80, page = Math.min(st.page, Math.max(0, Math.ceil(rows.length / per) - 1));
+    const slice = rows.slice(page * per, page * per + per);
+    if (!rows.length) return '<div class="empty"><b>Nothing matches these filters</b>Clear the search, activity or position filter.</div>';
+    return `<div class="tbl-wrap"><table class="t"><thead><tr><th>Hazard area</th><th>Threat</th><th>Barrier</th><th>Position</th><th>Safety-critical activity</th><th>SCE groups</th></tr></thead><tbody>${slice.map(x => `<tr>
+      <td><b>${esc(x.hazard)}</b><br><small style="color:var(--muted)">${esc(x.site || '')} · hazard ${esc(x.no)}</small></td>
+      <td>${esc(P.short(x.threat, 110))}</td>
+      <td>${esc(P.short(x.barrier, 160))}${x.flag ? `<br><small style="color:var(--amber)">${esc(x.flag)}</small>` : ''}</td>
+      <td>${esc(x.position || '—')}</td>
+      <td><b>${esc(x.actRef || '—')}</b> ${esc(actText(x))}</td>
+      <td>${(x.groups || []).map(groupChip).join(' ')}</td></tr>`).join('')}</tbody></table></div>
+      <div class="t-foot" style="display:flex;align-items:center;gap:8px"><span>${rows.length} activit${rows.length === 1 ? 'y' : 'ies'} · showing ${page * per + 1}–${Math.min(rows.length, page * per + per)}</span><span style="flex:1"></span>
+      <button class="btn sm" data-a="scapage" data-id="prev" ${page ? '' : 'disabled'}>Previous</button><button class="btn sm" data-a="scapage" data-id="next" ${page * per + per < rows.length ? '' : 'disabled'}>Next</button></div>`;
+  }
+
+  function scaView() {
+    const all = scaScope();
+    if (!all.length) return `<div class="page-head"><div><h2>Barriers &amp; safety-critical activities</h2><p>Each barrier, the position accountable for it and the critical activity that keeps it alive.</p></div></div>
+      <div class="panel"><div class="empty"><b>No safety-critical activities loaded yet</b>Import the SCE mapping workbook under Settings to load hazard areas, barriers, positions and Act. 01–10.</div></div>`;
+    const st = S.sca;
+    const hazN = (S.db.haz || []).filter(h => !S.loc || h.site === S.loc).length;
+    const instN = new Set(all.map(r => (r.cluster || '') + '|' + r.barrier)).size;
+    const nameN = new Set(all.map(r => r.barrier)).size;
+    const posN = scaPositions().length;
+    const cited = new Set(all.flatMap(r => r.groups || [])).size;
+    const tabs = [['activities', 'Critical activities', all.length], ['hazards', 'Hazard areas', hazN], ['catalogue', 'SCE catalogue', (S.db.sceg || []).length]];
+    return `<div class="page-head"><div><h2>Barriers &amp; safety-critical activities</h2><p>From the source SCE matrices: what each barrier protects against, who owns it and the critical activity that keeps it working. This is the requirement layer — inspections and test evidence are still logged against each SCE.</p></div></div>
+    <div class="grid g-4" style="margin-bottom:18px">
+      <div class="panel stat"><span class="n">${hazN}</span><span class="l">Hazard areas</span><span class="d">Threats grouped by system at each facility</span></div>
+      <div class="panel stat"><span class="n">${instN}</span><span class="l">Barriers</span><span class="d">${nameN} distinct barrier designs across ${esc(S.loc || 'the estate')}</span></div>
+      <div class="panel stat green"><span class="n">${all.length}</span><span class="l">Safety-critical activities</span><span class="d">Act. 01–10 mapped to a named position</span></div>
+      <div class="panel stat"><span class="n">${posN}</span><span class="l">Positions</span><span class="d">${cited} SCE group${cited === 1 ? '' : 's'} cited by barriers</span></div>
+    </div>
+    <div class="filters">${tabs.map(([k, l, n]) => `<button class="pill" aria-pressed="${st.tab === k}" data-a="scatab" data-id="${k}">${l}<span class="n">${n}</span></button>`).join('')}
+      <span style="flex:1"></span>
+      <input class="search" type="search" placeholder="Search hazards, barriers, positions, activities…" value="${esc(S.q.sca || '')}" data-in="scaq" aria-label="Search barriers and activities">
+    </div>
+    ${st.tab === 'activities' ? `<div class="filters" style="margin-top:-6px">
+      <select data-in="scaf" data-f="act" aria-label="Filter by activity reference"><option value="">All activity refs</option>${scaRefs().map(a => `<option ${a === st.act ? 'selected' : ''}>${esc(a)}</option>`).join('')}</select>
+      <select data-in="scaf" data-f="pos" aria-label="Filter by position"><option value="">All positions</option>${scaPositions().map(p => `<option ${p === st.pos ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
+      ${st.haz ? `<button class="pill" aria-pressed="true" data-a="scahaz" data-id="">Hazard filter on · clear</button>` : ''}
+    </div>` : ''}
+    <div class="panel" id="scabody">${scaBody()}</div>`;
   }
 
   /* ---------- documents ---------- */
@@ -360,6 +471,16 @@
     const items = [...st.insp.map(r => ['insp', r, r.type, inspStateChip(iI(r))]), ...st.ovr.map(r => ['ovr', r, r.type + ' override', ovrStateChip(oI(r))]), ...st.act.map(r => ['act', r, P.short(r.desc, 50), actStateChip(aI(r))])];
     return `<div class="sec-t">Linked records <small style="color:var(--muted);font-family:var(--font);font-weight:400">${items.length}</small></div>${items.length ? `<ul class="alist" style="border:1px solid var(--line);border-radius:8px">${items.map(([c, r, t, ch]) => `<li data-a="open" data-col="${c}" data-id="${r.id}"><div><b>${esc(t)}</b><small>${SCHEMA[c].one}</small></div><span class="tag">${ch}</span></li>`).join('')}</ul>` : '<div style="color:var(--muted)">Add an inspection with this tag to start assuring this barrier.</div>'}`;
   }
+  function sceActivityHtml(rec) {
+    const code = sceGroupOf(rec);
+    if (!code) return '';
+    const rows = (S.db.sca || []).filter(x => (x.groups || []).includes(code));
+    const shown = rows.slice(0, 12);
+    return `<div class="sec-t">${ic('link')} Barriers &amp; activities citing ${esc(code)} <small style="color:var(--muted);font-family:var(--font);font-weight:400">${rows.length}</small></div>
+    ${rows.length ? `<ul class="alist" style="border:1px solid var(--line);border-radius:8px">${shown.map(x => `<li><div><b>${esc(P.short(x.barrier, 110))}</b><small>${esc(x.hazard)} · ${esc(x.position || 'No position named')}</small><small><b>${esc(x.actRef || '—')}</b> ${esc(P.short(actText(x), 120))}</small></div></li>`).join('')}</ul>
+      ${rows.length > shown.length ? `<div style="margin-top:8px"><button class="btn sm" data-a="scagroupsearch" data-id="${esc(code)}">See all ${rows.length} in Barriers &amp; activities</button></div>` : ''}`
+      : '<div style="color:var(--muted)">No barrier in the source matrices cites this group.</div>'}`;
+  }
   const SIGNABLE = ['insp', 'ovr', 'act'];
   function signBox(rec, locked) {
     if (!rec.signedOff) return '<div class="signbox"><b>Not signed off yet</b><small>Closing this record signs it off automatically, stamped with your name.</small></div>';
@@ -376,7 +497,7 @@
     <div class="drawer-b"><datalist id="tags">${S.db.sce.map(s => `<option value="${esc(s.tag)}">${esc(s.desc || '')}</option>`).join('')}</datalist>
     <form class="form" id="rform" onsubmit="return false">${sc.fields.map(f => fieldHtml(f, rec, locked)).join('')}<div class="autobox" id="autobox">${autoHtml(col, rec)}</div></form>
     ${SIGNABLE.includes(col) && !rec._new ? `<div class="sec-t">${ic('check')} Sign-off</div><div class="drawer-signin">${signBox(rec)}</div>` : ''}
-    ${col === 'sce' && !rec._new ? linkedHtml(rec) : ''}
+    ${col === 'sce' && !rec._new ? linkedHtml(rec) + sceActivityHtml(rec) : ''}
     <div class="sec-t">${ic('clip')} Documents <small style="color:var(--muted);font-family:var(--font);font-weight:400">${(rec.docs || []).length}</small></div><div id="docbox">${docsHtml(rec)}</div>
     ${logs.length ? `<div class="sec-t">History <small style="color:var(--muted);font-family:var(--font);font-weight:400">${logs.length}</small></div>${auditList(logs)}` : ''}</div>
     <div class="drawer-f"><button class="btn primary" data-a="save">Save</button><button class="btn" data-a="closedrawer">Cancel</button><span style="flex:1"></span>${rec._new ? '' : `<button class="btn danger" data-a="delrec">${ic('trash')}Delete</button>`}</div></aside>`;
@@ -439,9 +560,15 @@
     const add = (name, head, rows, widths, fix) => { const ws = X.utils.aoa_to_sheet([head, ...rows]); ws['!cols'] = widths.map(w => ({ wch: w })); if (fix) fix(ws); X.utils.book_append_sheet(wb, ws, name); };
     const setC = (ws, a, o) => { ws[a] = Object.assign(ws[a] || {}, o); };
     const sm = S.sm;
-    add('Health Summary', ['Measure', 'Value'], [['Report date', S.t], ['Location', scope], ['Health index', sm.index == null ? 'Not measurable (no assurance data)' : sm.index], ['Rating', sm.rating], ['Inspections on time %', sm.I.onTimePct == null ? '' : sm.I.onTimePct], ['Overdue inspections', sm.I.overdue], ['Open overrides', sm.O.open], ['Open actions', sm.A.open], ['Overdue actions', sm.A.overdue], ['SCEs needing action', sm.B.red]], [30, 24]);
+    add('Health Summary', ['Measure', 'Value'], [['Report date', S.t], ['Location', scope], ['Health index', sm.index == null ? 'Not measurable (no assurance data)' : sm.index], ['Rating', sm.rating], ['Inspections on time %', sm.I.onTimePct == null ? '' : sm.I.onTimePct], ['Overdue inspections', sm.I.overdue], ['Open overrides', sm.O.open], ['Open actions', sm.A.open], ['Overdue actions', sm.A.overdue], ['SCEs needing action', sm.B.red], ['Hazard areas in scope', (D.haz || []).length], ['Barrier instances in scope', new Set((D.sca || []).map(x => (x.cluster || '') + '|' + x.barrier)).size], ['Safety-critical activities in scope', (D.sca || []).length]], [30, 34]);
     if (!S.loc) add('Locations', ['Location', 'Health index', 'Rating', 'SCEs', 'Need action', 'Tests overdue', 'Open overrides', 'Open actions'], sm.perSite.map(p => [p.site, p.index == null ? '' : p.index, p.empty ? 'No assurance data' : p.rating, p.sce, p.red, p.overdue, p.openOvr, p.openAct]), [26, 12, 12, 8, 12, 14, 14, 14]);
     add('SCE Master Register', ['S/N', 'Asset', 'Area / Unit', 'SCE Tag No', 'SCE Description', 'Barrier Type (Preventive/Mitigative)', 'Performance Standard Ref', 'SIL Rating', 'Risk Ranking (H/M/L)', 'Responsible Owner', 'Regulatory Ref', 'Status (Active/Retired)', 'Location'], D.sce.map((r, i) => [i + 1, r.asset, r.location, r.tag, r.desc, r.barrier, r.ps, r.sil, r.risk, r.owner, r.reg, r.status, r.site || '']), [6, 20, 20, 14, 36, 22, 18, 10, 14, 20, 18, 14, 22]);
+    add('SCE Catalogue', ['Code', 'SCE Group Description', 'MAH', 'Source Clusters', 'Facilities Linked Here', 'Coverage', 'Barriers Citing', 'Hazard Areas Citing'],
+      (D.sceg || []).map(g => [g.code, g.desc, (g.mah || []).join(', '), g.clusters || 0, (D.sce || []).filter(s => sceGroupOf(s) === g.code).length, (D.sce || []).some(s => sceGroupOf(s) === g.code) ? 'Mapped' : 'Not deployed here', g.barriersCiting || 0, g.hazardsCiting || 0]), [10, 36, 28, 14, 18, 18, 14, 18]);
+    add('Hazard Areas', ['Location', 'Cluster', 'Hazard No', 'Hazard Area / System', 'Threats', 'Barriers', 'Activities'],
+      (D.haz || []).map(h => { const rows = (D.sca || []).filter(x => x.hazardId === h.id); return [h.site, h.cluster, h.no, h.name, new Set(rows.map(x => x.threat).filter(Boolean)).size, new Set(rows.map(x => x.barrierId)).size, rows.length]; }), [22, 10, 10, 44, 10, 10, 12]);
+    add('SCA Barriers & Activities', ['Location', 'Cluster', 'Hazard No', 'Hazard Area / System', 'Threat', 'Barrier', 'SCE Groups', 'Position', 'Activity Ref', 'Safety-Critical Activity', 'Source Note'],
+      (D.sca || []).map(x => [x.site, x.cluster, x.no, x.hazard, x.threat, x.barrier, (x.groups || []).join('; '), x.position, x.actRef, actText(x), x.flag || '']), [22, 10, 8, 34, 36, 46, 20, 22, 10, 48, 30]);
     add('SCE Inspection Tracking', ['S/N', 'Asset', 'SCE Tag No', 'Inspection/Test Type', 'Test Frequency (Days)', 'Last Test Date', 'Next Due Date (Auto)', 'Test Result (Pass/Fail/Conditional)', 'Verification Authority', 'Overdue (Auto)', 'Remarks'],
       D.insp.map((r, i) => { const n = iI(r); return [i + 1, r.asset, r.tag, r.type, +r.freq, serial(r.last), serial(n.next), r.result, r.auth, n.state === 'overdue' ? 'YES' : 'NO', r.remarks]; }), [6, 20, 14, 30, 12, 14, 16, 18, 24, 12, 30], ws => D.insp.forEach((r, i) => { const n = i + 2; setC(ws, 'F' + n, { t: 'n', z: 'dd-mmm-yyyy' }); setC(ws, 'G' + n, { t: 'n', z: 'dd-mmm-yyyy', f: `F${n}+E${n}` }); setC(ws, 'J' + n, { f: `IF(G${n}<TODAY(),"YES","NO")` }); }));
     add('Barrier Overrides', ['Asset', 'SCE Tag No', 'Type (Override/Bypass/Inhibit)', 'Start Date', 'End Date', 'Duration (Hours - Auto)', 'Risk Assessment Conducted (Yes/No)', 'Compensating Measure in Place', 'Approved By', 'Status (Open/Closed)'],
@@ -499,8 +626,8 @@
   }
 
   /* ---------- shell ---------- */
-  const NAV = [['dashboard', 'Dashboard', 'dash'], ['alerts', 'Alerts', 'bell'], ['timeline', 'Timeline', 'time'], ['sep'], ['sce', 'SCE register', 'shield'], ['insp', 'Inspections', 'check'], ['ovr', 'Overrides', 'unlock'], ['act', 'Actions', 'flag'], ['kpi', 'KPIs', 'chart'], ['sep'], ['docs', 'Documents', 'folder'], ['audit', 'Audit log', 'clock'], ['summary', 'Reports', 'doc'], ['settings', 'Settings', 'gear']];
-  const TITLES = { dashboard: 'Dashboard', alerts: 'Alerts', timeline: 'Timeline', sce: 'SCE register', insp: 'Inspections', ovr: 'Overrides', act: 'Actions', kpi: 'KPIs', docs: 'Documents', audit: 'Audit log', summary: 'Reports', settings: 'Settings' };
+  const NAV = [['dashboard', 'Dashboard', 'dash'], ['alerts', 'Alerts', 'bell'], ['timeline', 'Timeline', 'time'], ['sep'], ['sce', 'SCE register', 'shield'], ['sca', 'Barriers & activities', 'link'], ['insp', 'Inspections', 'check'], ['ovr', 'Overrides', 'unlock'], ['act', 'Actions', 'flag'], ['kpi', 'KPIs', 'chart'], ['sep'], ['docs', 'Documents', 'folder'], ['audit', 'Audit log', 'clock'], ['summary', 'Reports', 'doc'], ['settings', 'Settings', 'gear']];
+  const TITLES = { dashboard: 'Dashboard', alerts: 'Alerts', timeline: 'Timeline', sce: 'SCE register', sca: 'Barriers & activities', insp: 'Inspections', ovr: 'Overrides', act: 'Actions', kpi: 'KPIs', docs: 'Documents', audit: 'Audit log', summary: 'Reports', settings: 'Settings' };
   function chrome() {
     const sm = S.sm, s = S.settings, n = sm.attention.length;
     return `<aside class="side" id="side"><div class="brand-lockup"><img src="${esc(s.logo || 'brand/oml11-logo.png')}" alt="NNPC E&amp;P Limited and WAGL OML 11 Limited"></div><div class="brand"><div><b>${esc(s.project)}</b><small>${esc(S.loc || (s.client ? 'for ' + s.client : s.location))}</small></div></div>
@@ -514,7 +641,7 @@
     <div class="meters" aria-label="Status bar"><div class="meter"><div class="row"><span>Inspections on time</span><b>${pfmt(I.onTimePct)}</b></div>${segBar(I.ok, I.soon, I.overdue)}</div><div class="meter"><div class="row"><span>Actions closed</span><b>${pfmt(A.closedPct)}</b></div>${segBar(A.closed, A.open - A.overdue, A.overdue)}</div><div class="meter"><div class="row"><span>Overrides controlled</span><b>${pfmt(O.controlledPct)}</b></div>${segBar(O.controlled, 0, O.open - O.controlled)}</div><div class="meter" style="min-width:90px"><div class="row"><span>Health index</span><b>${sm.index == null ? '–' : sm.index}</b></div><div class="bar"><i class="${sm.index == null ? 'grey' : sm.index >= 75 ? 'g' : sm.index >= 60 ? 'a' : 'r'}" style="width:${sm.index == null ? 0 : sm.index}%"></i></div></div></div>
     <div class="top-actions"><button class="iconbtn" data-a="nav" data-id="alerts" aria-label="${n} alerts">${ic('bell')}${n ? `<span class="dot">${n}</span>` : ''}</button><button class="iconbtn" data-a="theme" aria-label="Switch colour theme">${ic(document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon')}</button></div></header>`;
   }
-  const VIEWS = { dashboard, alerts: alertsView, timeline, audit: auditView, docs: docsView, summary: summaryView, settings: settingsView, sce: () => listView('sce'), insp: () => listView('insp'), ovr: () => listView('ovr'), act: () => listView('act'), kpi: () => listView('kpi') };
+  const VIEWS = { dashboard, alerts: alertsView, timeline, audit: auditView, docs: docsView, summary: summaryView, settings: settingsView, sca: scaView, sce: () => listView('sce'), insp: () => listView('insp'), ovr: () => listView('ovr'), act: () => listView('act'), kpi: () => listView('kpi') };
   function render() {
     if (S.loc && !locs().includes(S.loc)) { S.loc = ''; APP.lsSet('ps_loc', ''); }
     S.t = P.todayISO(S.settings.timezone); S._smap = P.siteMap(S.db); S.sm = P.summarize(S.db, S.settings, S.t, { site: S.loc });
@@ -530,6 +657,11 @@
   let saveT; const saveSoon = () => { clearTimeout(saveT); saveT = setTimeout(() => APP.saveSettings().catch(e => e.auth ? showLogin() : toast(e.message, true)), 500); };
   const A = {
     nav: el => go(el.dataset.id),
+    scatab: el => { S.sca.tab = el.dataset.id; S.sca.page = 0; render(); },
+    scapage: el => { const per = 80, n = Math.ceil(scaRows().length / per); S.sca.page = Math.max(0, Math.min(n - 1, S.sca.page + (el.dataset.id === 'next' ? 1 : -1))); const b = $('#scabody'); if (b) b.innerHTML = scaBody(); },
+    scahaz: el => { const id = el.dataset.id || ''; S.sca.haz = id; if (id) S.sca.tab = 'activities'; S.sca.page = 0; render(); },
+    scegroup: el => { S.q.sce = el.dataset.id; S.flt.sce = 'all'; go('sce'); },
+    scagroupsearch: el => { S.q.sca = el.dataset.id; S.sca.tab = 'activities'; S.sca.haz = ''; S.sca.act = ''; S.sca.pos = ''; S.sca.page = 0; go('sca'); },
     menu: () => $('#side').classList.toggle('open'),
     theme: () => { const d = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = d; APP.lsSet('ps_theme', d); renderChrome(); },
     open: el => { if (S.drawer) S.drawer = null; openDrawer(el.dataset.col, el.dataset.id); },
@@ -575,7 +707,8 @@
   }
   document.addEventListener('input', e => {
     const el = e.target;
-    if (el.dataset.in === 'q') { S.q[el.dataset.col] = el.value; const t = $('#tbl'); if (t) t.innerHTML = el.dataset.col === 'docs' ? docsTable(allDocs().filter(x => (x.d.name + ' ' + label(x.col, x.r)).toLowerCase().includes(el.value.toLowerCase()))) : tableHtml(el.dataset.col); }
+    if (el.dataset.in === 'scaq') { S.q.sca = el.value; S.sca.page = 0; const b = $('#scabody'); if (b) b.innerHTML = scaBody(); }
+    else if (el.dataset.in === 'q') { S.q[el.dataset.col] = el.value; const t = $('#tbl'); if (t) t.innerHTML = el.dataset.col === 'docs' ? docsTable(allDocs().filter(x => (x.d.name + ' ' + label(x.col, x.r)).toLowerCase().includes(el.value.toLowerCase()))) : tableHtml(el.dataset.col); }
     else if (el.dataset.in === 'tlq') { S.tl.q = el.value; clearTimeout(el._t); el._t = setTimeout(() => { render(); const i = $('[data-in=tlq]'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); }
     else if (el.dataset.k === 'reopenReason' && S.drawer) { S.drawer.rec.reopenReason = el.value; renderDrawer(); const i = document.querySelector('[data-k=reopenReason]'); i && i.focus(); i && i.setSelectionRange(i.value.length, i.value.length); }
     else if (el.closest('#rform') && S.drawer) {
@@ -588,7 +721,8 @@
   document.addEventListener('change', async e => {
     const el = e.target;
     if (el.dataset.in === 'asset') { S.asset = el.value; render(); }
-    else if (el.dataset.in === 'loc') { S.loc = el.value; S.asset = ''; APP.lsSet('ps_loc', S.loc); render(); }
+    else if (el.dataset.in === 'loc') { S.loc = el.value; S.asset = ''; S.sca.haz = ''; S.sca.page = 0; APP.lsSet('ps_loc', S.loc); render(); }
+    else if (el.dataset.in === 'scaf') { S.sca[el.dataset.f] = el.value; S.sca.page = 0; const b = $('#scabody'); if (b) b.innerHTML = scaBody(); }
     else if (el.dataset.set) { const p = el.dataset.set; let v = el.type === 'checkbox' ? el.checked : el.type === 'number' ? +el.value : el.value.trim(); setPath(S.settings, p, v); saveSoon(); if (['project', 'client', 'location', 'timezone', 'soonDays', 'rules.overrideMaxHours'].includes(p)) renderChrome(); }
     else if (el.dataset.in === 'addrec') addRecipient(el);
     else if (el.dataset.in === 'assign') {

@@ -8,9 +8,9 @@ window.APP = (function () {
   const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* storage blocked */ } };
 
   const S = {
-    db: { sce: [], insp: [], ovr: [], act: [], kpi: [], log: [] },
+    db: { sce: [], insp: [], ovr: [], act: [], kpi: [], log: [], sca: [], haz: [], bar: [], pos: [], sceg: [] },
     settings: clone(P.DEFAULT_SETTINGS), mode: 'static', info: {}, rev: 0,
-    view: 'dashboard', user: lsGet('ps_user'), t: P.todayISO(), sort: {}, flt: {}, q: {}, asset: '', loc: lsGet('ps_loc'), drawer: null, sm: null, tl: { months: 6, types: { insp: 1, ovr: 1, act: 1 }, q: '' }
+    view: 'dashboard', user: lsGet('ps_user'), t: P.todayISO(), sort: {}, flt: {}, q: {}, asset: '', loc: lsGet('ps_loc'), drawer: null, sm: null, tl: { months: 6, types: { insp: 1, ovr: 1, act: 1 }, q: '' }, sca: { tab: 'activities', act: '', pos: '', haz: '', page: 0 }
   };
 
   /* ---------- icons ---------- */
@@ -80,10 +80,10 @@ window.APP = (function () {
     if (S.mode === 'offline') throw new Error('The shared server is not reachable right now. This tracker does not save data in the browser; please wait a moment and reload.');
     if (S.mode === 'server') {
       const j = await req('GET', '/state');
-      S.db = Object.assign({ sce: [], insp: [], ovr: [], act: [], kpi: [], log: [] }, j.db); S.settings = mergeSettings(j.settings); S.rev = j.rev;
+      S.db = Object.assign({ sce: [], insp: [], ovr: [], act: [], kpi: [], log: [], sca: [], haz: [], bar: [], pos: [], sceg: [] }, j.db); S.settings = mergeSettings(j.settings); S.rev = j.rev;
     } else {
       const db = await kvGet('db'), st = await kvGet('settings');
-      if (db) { S.db = Object.assign({ sce: [], insp: [], ovr: [], act: [], kpi: [], log: [] }, db); S.settings = mergeSettings(st); }
+      if (db) { S.db = Object.assign({ sce: [], insp: [], ovr: [], act: [], kpi: [], log: [], sca: [], haz: [], bar: [], pos: [], sceg: [] }, db); S.settings = mergeSettings(st); }
       else { S.db = P.seed(S.t); S.settings = mergeSettings(Object.assign({}, st, { demo: true })); await persistLocal(); }
     }
     if (S.mode === 'server' && !S.db.sce.length && !S.db.insp.length && !S.settings.demo && !S.settings.seeded) { /* fresh server */ }
@@ -110,7 +110,7 @@ window.APP = (function () {
     if (S.mode === 'server') { const j = await req('PUT', '/settings', S.settings); if (j && j.rev) S.rev = j.rev; } else await persistLocal();
   }
   async function replaceAll(db, settings) {
-    S.db = Object.assign({ sce: [], insp: [], ovr: [], act: [], kpi: [], log: [] }, db); if (settings) S.settings = mergeSettings(settings);
+    S.db = Object.assign({ sce: [], insp: [], ovr: [], act: [], kpi: [], log: [], sca: [], haz: [], bar: [], pos: [], sceg: [] }, db); if (settings) S.settings = mergeSettings(settings);
     if (S.mode === 'server') { const j = await req('POST', '/import', { db: S.db, settings: S.settings }); if (j && j.rev) S.rev = j.rev; } else await persistLocal();
   }
   function logEvent(action, col, rec, label) {

@@ -22,7 +22,7 @@ let pool = null;
 if (DBURL) pool = new (require('pg').Pool)({ connectionString: DBURL, ssl: { rejectUnauthorized: false } });
 
 let state;
-const COLS = ['sce', 'insp', 'ovr', 'act', 'kpi', 'log'];
+const COLS = ['sce', 'insp', 'ovr', 'act', 'kpi', 'log', 'sca', 'haz', 'bar', 'pos', 'sceg'];
 
 /* file mode */
 const FILE = path.join(DATA, 'state.json');

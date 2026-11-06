@@ -25,7 +25,7 @@
     rules: { overdueInspections: true, dueSoon: true, expiredOverrides: true, overdueActions: true, failedTests: true, overrideMaxHours: 72 },
     digestEnabled: true, digestHour: 7, instantAlerts: true,
     emailjs: { serviceId: '', templateId: '', publicKey: '' }, webhook: '',
-    locations: ['Okoloma Gas Plant', 'Imo River', 'Bonny', 'Kidney Island', 'Isimiri', 'Okoloma Drilling Site', 'Imo River Drilling Sites', 'Rigs'],
+    locations: ['Okoloma Gas Plant', 'Imo River', 'Bonny', 'Kidney Island', 'Isimiri', 'Okoloma Drilling Site', 'Imo River Drilling Sites', 'Rigs', 'Oloma'],
     signoff: true, offlineMode: true,
     demo: false
   };
@@ -141,7 +141,14 @@
       ovr: (db.ovr || []).filter(keep),
       act: (db.act || []).filter(keep),
       kpi: (db.kpi || []).filter(r => (r.site || '') === site),
-      log: db.log || []
+      log: db.log || [],
+      /* reference layers: hazards, barriers and activities carry their own site;
+         positions and the SCE catalogue are estate-wide catalogues */
+      sca: (db.sca || []).filter(r => (r.site || '') === site),
+      haz: (db.haz || []).filter(r => (r.site || '') === site),
+      bar: (db.bar || []).filter(r => (r.site || '') === site),
+      pos: db.pos || [],
+      sceg: db.sceg || []
     };
   }
 

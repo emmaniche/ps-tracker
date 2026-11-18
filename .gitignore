@@ -1,8 +1,6 @@
 node_modules
 data
 .env
-.neon
-.env.local
-deploy/.thevibehosting_key
-deploy/.vibe-deployment.local.json
-.github/workflows/
+
+# Local Netlify folder
+.netlify

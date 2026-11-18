@@ -1,3 +1,13 @@
-# Static mode on Netlify: drag the folder in, or connect the repo. No build step.
+# Full app mode: static frontend + Express backend as a Netlify function.
 [build]
   publish = "public"
+  functions = "netlify/functions"
+
+# Backend API — the Express app runs as a Netlify function.
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/server"
+  status = 200
+  force = true
+
+# Daily digest scheduler lives in netlify/functions/digest.mts (@daily).

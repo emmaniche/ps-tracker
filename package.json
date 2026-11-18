@@ -1,25 +1,23 @@
 {
-  "name": "oml11-process-safety-tracker",
+  "name": "process-safety-tracker",
   "version": "1.0.0",
-  "description": "OML 11 JV Process Safety Tracker - SCE register, inspections, barrier overrides, defects & actions, KPIs, timeline, documents and email alerts.",
+  "description": "Process Safety Tracker – SCE register, inspections, barrier overrides, defects & actions, KPIs, timeline, documents and email alerts.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js",
-    "build": "node --check server.js"
+    "dev": "node server.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=18"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.700.0",
-    "@neon/config": "^1.10.0",
-    "@neon/env": "^1.6.8",
-    "@neon/functions": "^0.11.0",
-    "express": "^4.19.2",
-    "multer": "^2.4.0",
-    "nodemailer": "^6.9.14",
-    "pg": "^8.11.3"
+    "@netlify/blobs": "^11.1.9",
+    "@netlify/functions": "^6.1.1",
+    "express": "^4.22.3",
+    "multer": "^2.5.0",
+    "nodemailer": "^6.10.1",
+    "pg": "^8.23.1",
+    "serverless-http": "^4.0.0"
   },
   "license": "UNLICENSED"
 }

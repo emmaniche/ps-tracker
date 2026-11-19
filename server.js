@@ -40,7 +40,9 @@ async function load() {
       await withDb(async c => {
         await ensureTables(c);
         const r = await c.query("SELECT data FROM ps_state WHERE id = 'state'");
-        state = r.rows.length ? JSON.parse(r.rows[0].data) : null;
+        /* pg decodes jsonb into an object already; only parse when it is text. */
+        const raw = r.rows.length ? r.rows[0].data : null;
+        state = raw == null ? null : (typeof raw === 'string' ? JSON.parse(raw) : raw);
       });
     } catch (e) { state = null; lastStorageError = String(e.message || e).slice(0, 160); }
   } else {
@@ -138,7 +140,11 @@ app.post('/api/login', (req, res) => {
 });
 
 app.use('/api', (req, res, next) => (req.path === '/health' || req.path === '/login') ? next() : guard(req, res, next));
-app.get('/api/state', (req, res) => res.json({ db: state.db, settings: state.settings, rev: state.rev }));
+app.get('/api/state', async (req, res) => {
+  try { await stateReady; } catch (e) { return res.status(500).json({ error: 'Storage unavailable: ' + (lastStorageError || e.message || e) }); }
+  if (!state) return res.status(500).json({ error: 'Storage unavailable: ' + (lastStorageError || 'state not loaded') });
+  res.json({ db: state.db, settings: state.settings, rev: state.rev });
+});
 app.put('/api/settings', async (req, res) => { await stateReady; state.settings = Object.assign({}, PS.DEFAULT_SETTINGS, req.body); await save(); res.json({ rev: state.rev }); });
 app.post('/api/import', async (req, res) => {
   const { db, settings } = req.body || {}; if (!db) return res.status(400).json({ error: 'Missing data' });
